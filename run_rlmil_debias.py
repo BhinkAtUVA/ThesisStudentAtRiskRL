@@ -36,7 +36,6 @@ def finish_episode_policy_only(
         reg_coef, 
         sample_algorithm
 ):
-    torch.autograd.set_detect_anomaly(True, check_nan=False) # TODO: remove
     # Get one selection of eval data for computing reward
     policy_network.eval()
     eval_pool = policy_network.create_pool_data(eval_dataloader, bag_size, train_pool_size, random=only_ensemble)

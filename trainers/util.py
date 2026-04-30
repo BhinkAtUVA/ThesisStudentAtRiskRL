@@ -4,7 +4,9 @@ import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from RLMIL_Datasets import RLMILDataset
+from models.full import NetworkContainer
 from models.mil import create_mil_model_with_dict
+from trainers.base import Trainer
 from utils import (
     get_data_directory,
     read_data_split,
@@ -95,6 +97,36 @@ def create_task_model(args, mil_best_model_dir, logger):
                                             state_dict)
     return task_model
 
+def create_net_container(args, mil_best_model_dir, trainer: Trainer, logger):
+    if args.rl_task_model == "ensemble":
+        for ensemble_dir in os.listdir(os.path.join(mil_best_model_dir, "..")):
+            if "only_"+args.rl_task_model in ensemble_dir:
+                mil_best_model_dir = os.path.join(mil_best_model_dir, "..", ensemble_dir)
+                break
+        logger.info(f"Loading ensemble model from {mil_best_model_dir}")
+        ensemble_state_dict = torch.load(os.path.join(mil_best_model_dir, "sweep_best_model.pt"), map_location=torch.device("cpu"))
+        state_dict = {}
+        for k in ensemble_state_dict.keys():
+            if k.startswith("task_model."):
+                state_dict[k.split("task_model.")[1]] = ensemble_state_dict[k]
+    else:
+        state_dict = torch.load(os.path.join(mil_best_model_dir, "..", "best_model.pt"))
+    task_model = load_mil_model_from_config(os.path.join(mil_best_model_dir, "..", "best_model_config.json"),
+                                            state_dict)
+    net_container: NetworkContainer = trainer.get_model_constructor()(
+        task_model=task_model,
+        state_dim=args.state_dim,
+        hdim=args.hdim,
+        learning_rate=args.learning_rate,
+        device=args.device,
+        task_type=args.task_type,
+        min_clip=args.min_clip,
+        max_clip=args.max_clip,
+        sample_algorithm=args.sample_algorithm,
+        no_autoencoder=args.no_autoencoder_for_rl
+    )
+    return net_container
+
 def load_mil_model_from_config(mil_config_file, state_dict):
     mil_config = load_json(mil_config_file)
     task_model = create_mil_model_with_dict(mil_config)
@@ -115,3 +147,9 @@ def get_dataloaders(args, train_dataset, eval_dataset, test_dataset, logger):
     current_test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
 
     return current_train_dataloader, current_eval_dataloader, current_test_dataloader
+
+def predict(net_container: Trainer, dataloader, bag_size=20, pool_size=10):
+    pool_data = net_container.create_pool_data(dataloader, bag_size, pool_size)
+    preds = net_container.predict_pool(pool_data)
+    
+    return preds
