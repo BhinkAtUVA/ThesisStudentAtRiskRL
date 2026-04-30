@@ -1,0 +1,44 @@
+method: bayes
+metric:
+  name: eval/avg_mil_loss
+  goal: minimize
+parameters:
+  hdim:
+    distribution: constant
+    value: 8
+  epochs:
+    distribution: constant
+    value: 200
+  actor_learning_rate:
+    distribution: log_uniform_values
+    min: 1.0e-6
+    max: 1.0e-2
+  critic_learning_rate:
+    distribution: constant
+    value: 0
+  learning_rate:
+    distribution: constant
+    value: 1.0e-6
+  reg_coef:
+    distribution: uniform
+    min: 0.0
+    max: 1.0
+  early_stopping_patience:
+    distribution: constant
+    value: 25
+  batch_size:
+    distribution: constant
+    value: 128
+  gated_temperature:
+    distribution: uniform
+    min: 0.0
+    max: 10
+  gated_attention_size:
+    distribution: categorical
+    values: [16, 32, 64, 128]
+  gated_attention_dropout_p:
+    distribution: uniform
+    min: 0.0
+    max: 0.5
+run_cap: 50
+
