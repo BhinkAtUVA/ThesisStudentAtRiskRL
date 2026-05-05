@@ -225,8 +225,7 @@ class RLMILTrainer(Trainer):
             # reward = policy_network.compute_reward(eval_data)
             if not only_ensemble:
                 reward, _, _ = self.expected_reward_loss(eval_pool)
-                self.net_container.saved_actions.append(action_log_prob)
-                self.net_container.rewards.append(reward)
+                self.net_container.store_in_buffer((action_log_prob, reward))
                 regularization_losses.append(action_probs.sum(dim=-1).mean(dim=-1))
 
         
@@ -251,7 +250,7 @@ class RLMILTrainer(Trainer):
         if scheduler is not None:
             scheduler.step()
         # reset rewards and action buffer
-        self.net_container.reset_reward_action()
+        self.net_container.reset_buffers()
 
         return total_loss.item(), policy_loss.item(), 0, \
             np.mean(sel_losses), reg_coef * regularization_loss.item()

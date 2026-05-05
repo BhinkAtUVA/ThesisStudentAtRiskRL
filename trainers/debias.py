@@ -105,7 +105,7 @@ class RLMILDebiasTrainer(RLMILTrainer):
         if scheduler is not None:
             scheduler.step()
         # reset rewards and action buffer
-        self.net_container.reset_reward_action()
+        self.net_container.reset_buffers()
 
         return total_loss.item(), policy_loss.item(), 0, \
             np.mean(sel_losses), reg_coef * regularization_loss.item()

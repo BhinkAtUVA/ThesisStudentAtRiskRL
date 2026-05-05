@@ -45,37 +45,32 @@ class MILHypernetwork(nn.Module):
 class MILParamStorage(torch.Tensor):
     pass
     
+# Calculates the amount of weights for a given PolicyNetwork configuration
+def get_num_weights(state_dim: int, hdim: int):
+    return 8514 + 256 * state_dim + hdim * state_dim + hdim + hdim
 
 # Utility for applying parameters to the respective layers of a RL policy network
-def propagate_weights(weights_hypernet: torch.Tensor, weights_storage: MILParamStorage, alpha: float, net: PolicyNetwork, structure: List[List[List[Tuple[int]]]]):
+def pack_weights(weights_hypernet: torch.Tensor, weights_storage: MILParamStorage, alpha: float, state_dim: int, hdim: int):
     weights = alpha * weights_hypernet + (1 - alpha) * weights_storage
 
-    actor_structure = structure[0]
-    critic_structure = structure[1]
+    shapes = {
+        "actor.actor.0.weight": (256, state_dim),
+        "actor.actor.0.bias": (256),
+        "actor.actor.2.weight": (32, 256),
+        "actor.actor.2.bias": (32),
+        "actor.actor.4.weight": (1, 32),
+        "actor.actor.4.bias": (1),
+        "critic.critic.0.weight": (hdim, state_dim),
+        "critic.critic.0.bias": (hdim),
+        "critic.critic.2.weight": (1, hdim),
+        "critic.critic.2.bias": (1)
+    }
+    params = {}
 
-    idx, actor_params, critic_params = 0, [], []
-    for struct, params in zip((actor_structure, critic_structure), (actor_params, critic_params)):
-        for layer in struct:
-            layer_params = []
-            for shape in layer:
-                offset = np.prod(shape)
-                layer_params.append(weights[:, idx:(idx + offset)].reshape(shape))
-                idx += offset
-            params.append(layer_params)
+    idx = 0
+    for key, shape in shapes:
+        offset = np.prod(shape)
+        params[key] = weights[:, idx:(idx + offset)].reshape(shape)
+        idx += offset
     
-    idx = 0
-    for submod in net.actor.actor:
-        if submod is nn.Linear:
-            wb = actor_params[idx]
-            w, b = wb[0], wb[1]
-            submod.weight = w
-            submod.bias = b
-            idx += 1
-    idx = 0
-    for submod in net.critic.critic:
-        if submod is nn.Linear:
-            wb = actor_params[idx]
-            w, b = wb[0], wb[1]
-            submod.weight = w
-            submod.bias = b
-            idx += 1
+    return params
