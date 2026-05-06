@@ -62,7 +62,7 @@ class RLMILTrainer(Trainer):
             data_ys, pred_ys, losses, prob_ys = [], [], [], []
             for batch_x, batch_y, _, _ in eval_data:
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_out, loss = self.eval_minibatch(batch_x, batch_y)
+                pred_out, loss = self.net_container.predict(self.loss_fn, batch_x, batch_y)
                 if self.task_type == 'regression':
                     prob_y = pred_out
                     pred_y = torch.clamp(pred_out, min=self.min_clip, max=self.max_clip)
@@ -122,21 +122,6 @@ class RLMILTrainer(Trainer):
                     'r2': reward,
                 })
         return metrics, prob_Y.tolist(), data_Y.tolist(), pred_Y.tolist()
-    
-    def train_minibatch(self, batch_x, batch_y):
-        self.net_container.task_model.train()
-        batch_out = self.net_container.task_model(batch_x)
-        batch_loss = self.loss_fn(batch_out.squeeze(), batch_y.squeeze())
-        self.task_optim.zero_grad()
-        batch_loss.backward()
-        self.task_optim.step()
-        return batch_loss.item()
-
-    def eval_minibatch(self, batch_x, batch_y):
-        self.net_container.task_model.eval()
-        batch_out = self.net_container.task_model(batch_x)
-        batch_loss = self.loss_fn(batch_out.squeeze(), batch_y.squeeze())
-        return batch_out, batch_loss.item()
 
     def create_pool_data(self, dataloader, bag_size, pool_size, random=False):
         pool = []
@@ -219,7 +204,7 @@ class RLMILTrainer(Trainer):
                                                     algorithm=sample_algorithm)
             sel_x = select_from_action(action, batch_x)
             sel_y = batch_y
-            sel_loss = self.train_minibatch(sel_x, sel_y)
+            sel_loss = self.net_container.predict_train(self.loss_fn, self.task_optim, sel_x, sel_y)
             sel_losses.append(sel_loss)
             self.net_container.policy.eval()
             # reward = policy_network.compute_reward(eval_data)

@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from configs import parse_args
 from logger import get_logger
 from trainers.base import Trainer
+from trainers.hypernet import HypernetRLMILTrainer
 from trainers.util import create_net_container, get_dataloaders, load_mil_model_from_config, prepare_data
 from utils import (
     get_model_name,
@@ -252,7 +253,7 @@ def main_sweep():
 
 
     # Model Optimizer Scheduler EarlyStopping
-    policy_network = create_net_container(args, run_dir)
+    policy_network = create_net_container(args, run_dir, HypernetRLMILTrainer.get_model_constructor(), logger) # TODO: Make parameter for trainer
     # from IPython import embed; embed(); exit()
     policy_network = policy_network.to(DEVICE)
 
@@ -269,8 +270,19 @@ def main_sweep():
     early_stopping = EarlyStopping(models_dir=run_dir, save_model_name=f"sweep_checkpoint.pt",
                                    trace_func=logger.info,
                                    patience=args.early_stopping_patience, verbose=True, descending=False)
+    
+    trainer = HypernetRLMILTrainer(
+        net_container = policy_network,
+        learning_rate = args.learning_rate,
+        device = args.device,
+        task_type = args.task_type,
+        min_clip = args.min_clip,
+        max_clip = args.max_clip,
+        sample_algorithm = args.sample_algorithm
+    ) # TODO: Make parameter for trainer
 
     policy_network = train(
+        trainer=trainer,
         policy_network=policy_network,
         optimizer=optimizer,
         scheduler=scheduler,

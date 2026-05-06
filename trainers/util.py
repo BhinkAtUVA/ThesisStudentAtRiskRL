@@ -97,7 +97,7 @@ def create_task_model(args, mil_best_model_dir, logger):
                                             state_dict)
     return task_model
 
-def create_net_container(args, mil_best_model_dir, trainer: Trainer, logger):
+def create_net_container(args, mil_best_model_dir, constructor: type[NetworkContainer], logger):
     if args.rl_task_model == "ensemble":
         for ensemble_dir in os.listdir(os.path.join(mil_best_model_dir, "..")):
             if "only_"+args.rl_task_model in ensemble_dir:
@@ -113,10 +113,11 @@ def create_net_container(args, mil_best_model_dir, trainer: Trainer, logger):
         state_dict = torch.load(os.path.join(mil_best_model_dir, "..", "best_model.pt"))
     task_model = load_mil_model_from_config(os.path.join(mil_best_model_dir, "..", "best_model_config.json"),
                                             state_dict)
-    net_container: NetworkContainer = trainer.get_model_constructor()(
+    net_container: NetworkContainer = constructor(
         task_model=task_model,
         state_dim=args.state_dim,
         hdim=args.hdim,
+        hidden_dim=args.hidden_dim,
         learning_rate=args.learning_rate,
         device=args.device,
         task_type=args.task_type,
