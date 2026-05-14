@@ -12,7 +12,7 @@
 cd ~/StudiumDS/Sem2/Thesis/ThesisStudentAtRiskRL # ROOT OF YOUR PROJECT
 source venv/bin/activate
 
-baseline_types=("MeanMLP" "MaxMLP" "AttentionMLP" "repset")
+baseline_types=("repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
 target_labels=("label")
 gpus=(0)
 wandb_entity="BhinkAtUVA"
@@ -20,7 +20,6 @@ wandb_project="Thesis"
 
 data_embedded_column_name="instances"
 task_type="classification"
-autoencoder_layer_sizes="22,16,22"  	        # "22,16,22" for oulad_aggregated and "20,16,20" for oulad_full
 bag_sizes=(20)                                # for all experiments in this project bag_size 20 is used
 embedding_models=("tabular")
 random_seed=0
@@ -40,14 +39,12 @@ for target_label in "${target_labels[@]}"; do
     for embedding_model in "${embedding_models[@]}"; do
       for baseline_type in "${baseline_types[@]}"; do
         gpu=${gpus[$target_label_index]}
-        echo "$baseline_type, $dataset $target_label, bag_size_$bag_size, $embedding_model, gpu_$gpu ($current_run/$total_runs)"
+        echo "$baseline_type $target_label, bag_size_$bag_size, $embedding_model, gpu_$gpu ($current_run/$total_runs)"
 
-        CUDA_VISIBLE_DEVICES=$gpu python run_trainer.py --rl --baseline $baseline_type \
-                                            --autoencoder_layer_sizes $autoencoder_layer_sizes \
+        CUDA_VISIBLE_DEVICES=$gpu python src/run_trainer.py --rl --baseline $baseline_type \
                                             --label $target_label \
                                             --data_embedded_column_name $data_embedded_column_name \
                                             --prefix $prefix \
-                                            --dataset $dataset \
                                             --bag_size $bag_size \
                                             --embedding_model $embedding_model \
                                             --train_pool_size 1 --eval_pool_size 10 --test_pool_size 10 \

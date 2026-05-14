@@ -1,0 +1,71 @@
+Job started on Thu Sep 18 02:00:38 CEST 2025
+Error: 'final_thesis_results.csv' not found in the current directory.
+--- Loading label map for: OULAD_FULL ---
+
+Building global map from Bag ID to Instance Labels
+Built map for 27379 bags.
+Successfully loaded map with 27379 bags.
+--- Loading label map for: OULAD_AGGREGATED ---
+
+Building global map from Bag ID to Instance Labels
+Built map for 27379 bags.
+Successfully loaded map with 27379 bags.
+--- Starting SHAP Analysis ---
+
+- Processing SHAP for: Epsilon-Greedy (SHAP) on oulad_full
+  No SHAP file found at results/shap_scores_oulad_full_MeanMLP_seed_7.csv.
+  Starting new calculation (this may take a while)...
+Attempting to load RL model...
+RL model loaded successfully.
+  SHAP values calculated. Saving to: results/shap_scores_oulad_full_MeanMLP_seed_7.csv
+
+- Processing SHAP for: Epsilon-Greedy (SHAP) on oulad_aggregated
+  No SHAP file found at results/shap_scores_oulad_aggregated_MeanMLP_seed_7.csv.
+  Starting new calculation (this may take a while)...
+Attempting to load RL model...
+RL model loaded successfully.
+  SHAP values calculated. Saving to: results/shap_scores_oulad_aggregated_MeanMLP_seed_7.csv
+
+--- SHAP analysis complete. ---
+--- Loading standard model data ---
+Loading: Linear Attention on oulad_full
+Loading: Gated Attention on oulad_full
+Loading: Multi-Head Attention on oulad_full
+Loading: Linear Attention on oulad_aggregated
+Loading: Gated Attention on oulad_aggregated
+Loading: Multi-Head Attention on oulad_aggregated
+
+--- Standard model loading complete. ---
+--- Finding common bags for each dataset ---
+- Found 2738 common bags for the 4 models in 'oulad_full'.
+- Found 2738 common bags for the 4 models in 'oulad_aggregated'.
+--- Generating Top-20 counts ---
+- Processing: Epsilon-Greedy (SHAP) on oulad_full
+- Processing: Epsilon-Greedy (SHAP) on oulad_aggregated
+- Processing: Linear Attention on oulad_full
+- Processing: Gated Attention on oulad_full
+- Processing: Multi-Head Attention on oulad_full
+- Processing: Linear Attention on oulad_aggregated
+- Processing: Gated Attention on oulad_aggregated
+- Processing: Multi-Head Attention on oulad_aggregated
+
+--- Count generation complete. ---
+
+--- Top-20 Feature Counts for: EPSILON-GREEDY (SHAP) ON OULAD_FULL ---
+Based on 2738 common bags.
+Job finished on Thu Sep 18 13:23:36 CEST 2025
+
+JOB STATISTICS
+==============
+Job ID: 14753804
+Cluster: snellius
+User/Group: nbraakman/nbraakman
+State: RUNNING
+Nodes: 1
+Cores per node: 16
+CPU Utilized: 00:00:00
+CPU Efficiency: 0.00% of 7-14:10:24 core-walltime
+Job Wall-clock time: 11:23:09
+Memory Utilized: 0.00 MB
+Memory Efficiency: 0.00% of 16.00 GB (16.00 GB/node)
+WARNING: Efficiency statistics can only be obtained after the job has ended as seff tool is based on the accounting database data.

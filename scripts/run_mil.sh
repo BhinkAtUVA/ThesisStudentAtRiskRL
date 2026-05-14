@@ -12,15 +12,15 @@
 cd ~/StudiumDS/Sem2/Thesis/ThesisStudentAtRiskRL # ROOT OF YOUR PROJECT
 source venv/bin/activate
 
-baseline_types=("MeanMLP" "MaxMLP" "AttentionMLP" "repset")
+baseline_types=("AttentionMLP" "repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
 target_labels=("label")
 gpus=(0)
-wandb_entity="YOUR_WANDB_ENTITY"
-wandb_project="YOUR_WANDB_PROJECT"
+wandb_entity="BhinkAtUVA"
+wandb_project="Thesis"
 
 data_embedded_column_name="instances"
 task_type="classification"
-autoencoder_layer_sizes="22,16,22"                # "22,16,22" for oulad_aggregated and "20,16,20" for oulad_full
+# "22,16,22" for oulad_aggregated and "20,16,20" for oulad_full
 bag_sizes=(20)                                    # for all experiments in this project bag_size 20 is used
 embedding_models=("tabular")
 
@@ -43,14 +43,12 @@ for target_label_index in "${!target_labels[@]}"; do
                                       --label "$target_label" \
                                       --bag_size "$bag_size" \
                                       --embedding_model $embedding_model \
-                                      --dataset $dataset \
-                                      --no_wandb \
                                       --wandb_entity $wandb_entity \
                                       --wandb_project $wandb_project \
-                                      --autoencoder_layer_sizes $autoencoder_layer_sizes \
                                       --data_embedded_column_name $data_embedded_column_name \
                                       --task_type $task_type \
-                                      --random_seed 0 ;
+                                      --random_seed 0 \
+                                      --run_sweep ;
         
         ((current_run++))
       done
