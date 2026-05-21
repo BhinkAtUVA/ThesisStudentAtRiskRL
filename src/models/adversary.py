@@ -1,6 +1,6 @@
 import torch
 
-from models.atoms import SimpleMLP
+from src.models.atoms import SimpleMLP
 
 # With this, one call to .backward() on the loss is enough to train main model and adversary differently
 class GradientReversal(torch.autograd.Function):

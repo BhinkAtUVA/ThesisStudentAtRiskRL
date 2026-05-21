@@ -4,11 +4,11 @@ import os
 import torch
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from RLMIL_Datasets import RLMILDataset
-from models.full import NetworkContainer
-from models.mil import create_mil_model_with_dict
-from trainers.base import Trainer
-from utils import (
+from src.RLMIL_Datasets import RLMILDataset
+from src.models.full import NetworkContainer
+from src.models.mil import create_mil_model_with_dict
+from src.trainers.base import Trainer
+from src.utils import (
     get_data_directory,
     read_data_split,
     preprocess_dataframe,
@@ -33,6 +33,10 @@ def prepare_data(args, logger):
         extra_columns = [args.instance_labels_column]
     else:
         extra_columns = []
+
+    if args.further_extra_columns is not None:
+        extra_columns.append(args.further_extra_columns)
+    
     train_dataframe, label2id, id2label = preprocess_dataframe(df=train_dataframe, dataframe_set="train", label=args.label,
                                            train_dataframe_mean=train_dataframe_mean,
                                            train_dataframe_median=train_dataframe_median,

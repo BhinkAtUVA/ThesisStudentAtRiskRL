@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, f1_score, r2_score, roc_auc_score
+from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 
-from models.atoms import BaseNetwork
+from src.models.atoms import BaseNetwork
 
 # Base network defining the classification flow
 class BaseMLP(nn.Module, ABC):

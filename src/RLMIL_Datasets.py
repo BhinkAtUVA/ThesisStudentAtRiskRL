@@ -25,6 +25,7 @@ class RLMILDataset(Dataset):
             self.instance_labels = df[instance_labels_column]
         else:
             self.instance_labels = None
+        self.original_dataframe = df # Store original data for access in SHAP calculation
 
     def set_bag_mask(self, index: int, bag_mask: torch.Tensor) -> None:
         assert bag_mask.dtype == torch.bool, "bag_mask must be of type torch.bool"

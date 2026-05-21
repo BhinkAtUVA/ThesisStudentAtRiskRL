@@ -6,8 +6,8 @@ from torch import optim
 import torch
 import wandb
 
-from models.full import NetworkContainer, RLMILBase
-from models.rl import get_loss_fn, sample_action, select_from_action
+from src.models.full import NetworkContainer, RLMILBase
+from src.models.rl import get_loss_fn, sample_action, select_from_action
 
 from abc import ABC, abstractmethod
 

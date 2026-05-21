@@ -1,11 +1,8 @@
 from collections import OrderedDict
-from typing import List, Tuple
 
 import numpy as np
 from torch import nn
 import torch
-
-from models.rl import PolicyNetwork
 
 # Except for the applied Sigmoid at the end, this network is very similar to the SimpleMLP in atoms.py
 class MILHypernetwork(nn.Module):

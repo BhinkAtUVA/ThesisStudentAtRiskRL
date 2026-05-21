@@ -4,9 +4,9 @@ import numpy as np
 import torch
 from torch.func import functional_call
 
-from models.adversary import AdversarialMLP
-from models.hypernet import MILHypernetwork, get_num_weights, init_policy_storage, pack_weights
-from models.rl import PolicyNetwork
+from src.models.adversary import AdversarialMLP
+from src.models.hypernet import MILHypernetwork, get_num_weights, init_policy_storage, pack_weights
+from src.models.rl import PolicyNetwork
 
 # Utility for better typing
 class NetworkContainer(ABC):
@@ -57,6 +57,9 @@ class RLMILBase(NetworkContainer):
 
         self.saved_actions = []
         self.rewards = []
+        
+        if kwargs["device"] is not None:
+            self.to(kwargs["device"])
 
     def action(self, batch_x):
         if self.no_autoencoder:
@@ -111,22 +114,6 @@ class RLMILBase(NetworkContainer):
     def load_state_dict(self, state_dict):
         self.policy.load_state_dict(state_dict)
 
-# TODO: Remove when complete full model is established
-class RLMILDebias(RLMILBase):
-    def __init__(self, **kwargs):
-        super(RLMILDebias, self).__init__(
-            task_model=kwargs['task_model'],
-            state_dim=kwargs['state_dim'],
-            hdim=kwargs['hdim'],
-            no_autoencoder=kwargs['no_autoencoder'],
-        )
-        # self.args = args
-        self.debiasing_model = AdversarialMLP(kwargs["hidden_dim"], kwargs["hidden_dim"] // 4, 4)
-        self.task_model.mlp[-2].register_forward_hook(self._peek_task_last_hidden)
-    
-    def _peek_task_last_hidden(self, module, input, output):
-        self.batch_hidden = output
-
 class HypernetRLMIL(NetworkContainer):
     def __init__(self, **kwargs):
         super(HypernetRLMIL, self).__init__()
@@ -152,6 +139,9 @@ class HypernetRLMIL(NetworkContainer):
         
         self.debiasing_model = AdversarialMLP(self.hidden_dim, self.hidden_dim // 4, 4)
         self.task_model.mlp[-2].register_forward_hook(self._peek_task_last_hidden)
+
+        if kwargs["device"] is not None:
+            self.to(kwargs["device"])
     
     def _peek_task_last_hidden(self, module, input, output):
         self.batch_hidden = output
@@ -169,16 +159,16 @@ class HypernetRLMIL(NetworkContainer):
         combined_weights = pack_weights(hyper_weights, self.policy_weights, 0.05, self.state_dim, self.hdim)
 
         action_probs, exp_reward = functional_call(self.policy, combined_weights, batch_rep)
-        action_probs = action_probs.squeeze(-1)
 
-        exp_reward = torch.mean(exp_reward, dim=1)
         return action_probs, batch_rep, exp_reward
     
     def predict(self, loss_fn, batch_x, batch_y):
         self.task_model.eval()
         batch_out = self.task_model(batch_x)
         batch_loss = loss_fn(batch_out.squeeze(), batch_y.squeeze())
-        return batch_out, batch_loss.item()
+        batch_bias_pred = self.debiasing_model(self.batch_hidden)
+        batch_bias_loss = loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values)
+        return batch_out, batch_loss.item(), batch_bias_loss.item()
     
     def predict_train(self, loss_fn, task_optim, batch_x, batch_y):
         self.task_model.train()
@@ -187,8 +177,8 @@ class HypernetRLMIL(NetworkContainer):
         batch_bias_pred = self.debiasing_model(self.batch_hidden)
         batch_bias_loss = loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) # Indices of protected features, maximum is valid because instances of protected features are sparse
         task_optim.zero_grad()
-        batch_loss.backward(retain_graph=True)
-        # self.task_optim.step() # Moved to training script for using biases in total_loss
+        batch_loss.backward()
+        task_optim.step() # Moved to training script for using biases in total_loss
         return batch_loss.item(), batch_bias_loss
     
     def store_in_buffer(self, transition):
@@ -224,5 +214,7 @@ class HypernetRLMIL(NetworkContainer):
     
     def load_state_dict(self, state_dict):
         self.hyper.load_state_dict(state_dict["hyper"])
-        self.policy_weights = state_dict["storage"].to(self.policy_weights.get_device())
+        policy_weights = state_dict["storage"]
+        if self.policy_weights.get_device() >= 0: policy_weights = policy_weights.to(self.policy_weights.get_device())
+        self.policy_weights = policy_weights
         self.debiasing_model.load_state_dict(state_dict["debias"])

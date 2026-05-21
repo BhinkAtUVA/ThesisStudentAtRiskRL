@@ -5,7 +5,6 @@ from models.full import HypernetRLMIL
 from models.rl import sample_action, select_from_action
 from trainers.base import RLMILTrainer
 
-# TODO: Remove when trianer for full model is established
 class HypernetRLMILTrainer(RLMILTrainer):
     def __init__(self, net_container: HypernetRLMIL, **kwargs):
         super(HypernetRLMILTrainer, self).__init__(
@@ -76,7 +75,7 @@ class HypernetRLMILTrainer(RLMILTrainer):
         policy_losses = []
         self.net_container.policy.train()
         for log_prob, reward in zip(self.net_container.saved_actions, self.net_container.rewards):
-            policy_losses.append(-reward * log_prob.cuda())
+            policy_losses.append(-reward * log_prob)
 
         # TODO: Decide on whether or not to sample randomly from batch results for training
 
@@ -84,12 +83,11 @@ class HypernetRLMILTrainer(RLMILTrainer):
         policy_loss = torch.cat(policy_losses).mean()
         regularization_loss = torch.stack(regularization_losses).mean() / 100
         bias_loss = torch.stack(bias_losses).mean()
-        total_loss = (1 - preference.item()) * policy_loss + reg_coef * regularization_loss - preference.item() * bias_loss
+        total_loss = (1 - preference.item()) * (policy_loss + reg_coef * regularization_loss) - preference.item() * bias_loss
         # perform backprop
         total_loss.backward()
 
         optimizer.step()
-        self.task_optim.step()
         
         if scheduler is not None:
             scheduler.step()
