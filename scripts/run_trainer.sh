@@ -12,7 +12,7 @@
 cd ~/StudiumDS/Sem2/Thesis/ThesisStudentAtRiskRL # ROOT OF YOUR PROJECT
 source venv/bin/activate
 
-baseline_types=("repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
+baseline_types=("MeanMLP") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
 target_labels=("label")
 gpus=(0)
 wandb_entity="BhinkAtUVA"
@@ -26,7 +26,7 @@ random_seed=0
 
 rl_task_model="vanilla"
 sample_algorithm="without_replacement"
-prefix="loss"
+prefix="loss_pareto_hypernet" # TODO: Include baseline as well "loss"
 rl_model="policy_only"
 search_algorithm="epsilon_greedy"
 reg_alg="sum"
@@ -41,7 +41,7 @@ for target_label in "${target_labels[@]}"; do
         gpu=${gpus[$target_label_index]}
         echo "$baseline_type $target_label, bag_size_$bag_size, $embedding_model, gpu_$gpu ($current_run/$total_runs)"
 
-        CUDA_VISIBLE_DEVICES=$gpu python src/run_trainer.py --rl --baseline $baseline_type \
+        CUDA_VISIBLE_DEVICES=$gpu python -m src.run_trainer --rl --baseline $baseline_type \
                                             --label $target_label \
                                             --data_embedded_column_name $data_embedded_column_name \
                                             --prefix $prefix \

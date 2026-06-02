@@ -7,17 +7,19 @@ import torch.optim as optim
 import wandb
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from configs import parse_args
-from logger import get_logger
-from models.full import HypernetRLMIL
-from trainers.base import Trainer
-from trainers.hypernet import HypernetRLMILTrainer
-from trainers.util import create_net_container, get_dataloaders, load_mil_model_from_config, prepare_data
-from utils import (
+from src.configs import parse_args
+from src.logger import get_logger
+from src.models.full import HypernetRLMIL
+from src.trainers.base import Trainer
+from src.trainers.hypernet import HypernetRLMILTrainer
+from src.trainers.util import create_net_container, get_dataloaders, get_model, load_mil_model_from_config, prepare_data
+from src.utils import (
     get_model_save_directory,
     get_balanced_weights,
     EarlyStopping, save_json
 )
+
+import copy
 
 
 # TODO: Make model saving and loading work properly with different trainer classes
@@ -71,10 +73,16 @@ def train(
         wandb.log(log_dict)
     
     # logger.info(f"Training model started ....")
+
+    net_ct: HypernetRLMIL = trainer.net_container
+    initial_hyper_weights = copy.deepcopy(net_ct.hyper.state_dict())
+    initial_stored_weights = net_ct.policy_weights.clone().detach()
+    initial_debias_weights = copy.deepcopy(net_ct.debiasing_model.state_dict())
+
     for epoch in range(epochs):
         log_dict = {}
         warmup = epoch < warmup_epochs
-        total_loss, policy_loss, value_loss, mil_loss, reg_loss = trainer.episode(
+        total_loss, policy_loss, value_loss, mil_loss, reg_loss, bias_loss, preference = trainer.episode(
             train_dataloader=train_dataloader,
             eval_dataloader=eval_dataloader,
             optimizer=optimizer,
@@ -109,6 +117,8 @@ def train(
                         "train/policy_loss": policy_loss,
                         "train/value_loss": value_loss,
                         "train/reg_loss": reg_loss,
+                        "train/bias_loss": bias_loss,
+                        "train/preference": preference,
                         "train/mil_loss": mil_loss,
                         "eval/avg_mil_loss": eval_loss,
                         f"train/avg_{metric}": train_reward,
@@ -209,6 +219,35 @@ def train(
             logger.info(f"Early stopping at epoch {epoch} out of {epochs}")
             break
 
+        current_hyper_weights: dict = trainer.net_container.hyper.state_dict()
+        ratios = np.ndarray((0))
+        for key, tensor in initial_hyper_weights.items():
+            raw_ratios = (tensor / current_hyper_weights[key]).reshape((np.prod(tensor.shape)))
+            current_ratios = raw_ratios.cpu().numpy()
+            ratios = np.concat((ratios, current_ratios))
+
+        ratios[ratios < 1] = 1 / ratios[ratios < 1]
+        ratios = ratios[~np.isnan(ratios)]
+        logger.info(f"Hypernet parameters changed on average by a factor of {np.median(ratios)}")
+
+        current_stored_weights = net_ct.policy_weights.clone().detach()
+        ratios = (current_stored_weights / initial_stored_weights).reshape(np.prod(current_stored_weights.shape))
+        ratios = ratios.cpu().numpy()
+        ratios[ratios < 1] = 1 / ratios[ratios < 1]
+        ratios = ratios[~np.isnan(ratios)]
+        logger.info(f"Stored Policy parameters changed on average by a factor of {np.median(ratios)}")
+        
+        current_debias_weights: dict = trainer.net_container.debiasing_model.state_dict()
+        ratios = np.ndarray((0))
+        for key, tensor in initial_debias_weights.items():
+            raw_ratios = (tensor / current_debias_weights[key]).reshape((np.prod(tensor.shape)))
+            current_ratios = raw_ratios.cpu().numpy()
+            ratios = np.concat((ratios, current_ratios))
+
+        ratios[ratios < 1] = 1 / ratios[ratios < 1]
+        ratios = ratios[~np.isnan(ratios)]
+        logger.info(f"Debias parameters changed on average by a factor of {np.median(ratios)}")
+
     # load the best model
     trainer.net_container.load_state_dict(torch.load(early_stopping.model_address))
     trainer.net_container.policy.eval()
@@ -262,8 +301,10 @@ def main_sweep():
 
     optimizer = optim.AdamW(
         [{"params": net_container.hyper.parameters(),
-          "lr": args.learning_rate,},
+          "lr": 0.1,},
          {"params": [net_container.policy_weights],
+          "lr": args.learning_rate,},
+         {"params": net_container.debiasing_model.parameters(),
           "lr": args.learning_rate,}],
         lr=args.learning_rate,
     )
@@ -283,6 +324,26 @@ def main_sweep():
         max_clip = args.max_clip,
         sample_algorithm = args.sample_algorithm
     ) # TODO: Make parameter for trainer
+
+    try:
+        best_model, _ = get_model(run_dir)
+        best_trainer = HypernetRLMILTrainer(
+            net_container = best_model,
+            learning_rate = args.learning_rate,
+            device = DEVICE,
+            task_type = args.task_type,
+            min_clip = args.min_clip,
+            max_clip = args.max_clip,
+            sample_algorithm = args.sample_algorithm
+        )
+
+        # If there has been a sweep before, the best model of that sweep is the status quo
+        global BEST_REWARD
+        eval_pool = trainer.create_pool_data(current_eval_dataloader, args.bag_size, args.eval_pool_size, random=args.only_ensemble)
+        _, _, ensemble_reward = best_trainer.expected_reward_loss(eval_pool)
+        BEST_REWARD = ensemble_reward
+    except:
+        pass # There was no sweep yet
 
     net_container = train(
         trainer=trainer,

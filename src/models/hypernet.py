@@ -1,4 +1,5 @@
 from collections import OrderedDict
+import math
 
 import numpy as np
 from torch import nn
@@ -64,7 +65,7 @@ def init_policy_storage(state_dim: int, hdim: int) -> MILParamStorage:
     ]:
         if type(shape) != tuple or len(shape) == 1: tensors.append(torch.fill(torch.zeros(shape), 0.01))
         else: tensors.append(torch.nn.init.xavier_uniform_(torch.zeros(shape)).reshape((np.prod(shape))))
-    return torch.cat(tensors)
+    return torch.cat(tensors).detach()
 
 # Utility for applying parameters to the respective layers of a RL policy network
 def pack_weights(weights_hypernet: torch.Tensor, weights_storage: MILParamStorage, alpha: float, state_dim: int, hdim: int):
@@ -72,21 +73,21 @@ def pack_weights(weights_hypernet: torch.Tensor, weights_storage: MILParamStorag
 
     shapes = OrderedDict()
     shapes["actor.actor.0.weight"] = (256, state_dim)
-    shapes["actor.actor.0.bias"] = (256)
+    shapes["actor.actor.0.bias"] = (256,)
     shapes["actor.actor.2.weight"] = (32, 256)
-    shapes["actor.actor.2.bias"] = (32)
+    shapes["actor.actor.2.bias"] = (32,)
     shapes["actor.actor.4.weight"] = (1, 32)
-    shapes["actor.actor.4.bias"] = (1)
+    shapes["actor.actor.4.bias"] = (1,)
     shapes["critic.critic.0.weight"] = (hdim, state_dim)
-    shapes["critic.critic.0.bias"] = (hdim)
+    shapes["critic.critic.0.bias"] = (hdim,)
     shapes["critic.critic.2.weight"] = (1, hdim)
-    shapes["critic.critic.2.bias"] = (1)
+    shapes["critic.critic.2.bias"] = (1,)
     params = {}
 
     idx = 0
     for key, shape in shapes.items():
-        offset = np.prod(shape)
-        params[key] = weights[idx:(idx + offset)].reshape(shape)
+        offset = math.prod(shape)
+        params[key] = weights[idx:(idx + offset)].view(shape)
         idx += offset
     
     return params

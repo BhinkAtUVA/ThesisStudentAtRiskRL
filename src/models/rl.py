@@ -102,18 +102,46 @@ def sample_action_with_replacement(action_probs, n, device, random=False):
     return action.T, log_prob
 
 def sample_action_without_replacement(action_probs, n, device, random=False):
-    # multinomial sampling without replacement
-    # sample_weights = action_probs[:, :, 1]
-    sample_weights = action_probs
+    batch_size, num_actions = action_probs.shape
+    
     if random:
-        action = torch.empty((action_probs.shape[0], n), dtype=torch.long)
-        for i in range(action_probs.shape[0]):
-            action[i] = torch.randperm(action_probs.shape[1])[:n]  
-        action = action.to(device)
-    else:
-        action = torch.multinomial(sample_weights, n)
-    log_prob = torch.log(sample_weights.gather(1, action))
-    log_prob = log_prob.mean(dim=1)
+        action = torch.empty((batch_size, n), dtype=torch.long, device=device)
+        for i in range(batch_size):
+            action[i] = torch.randperm(num_actions, device=device)[:n]
+        # For random actions, log_prob is a uniform constant scalar (no gradients)
+        log_prob = torch.zeros(batch_size, device=device)
+        return action, log_prob
+
+    # Clone weights to manipulate them without destroying original graph
+    weights = action_probs.clone()
+    
+    selected_actions = []
+    log_probs_list = []
+    
+    for _ in range(n):
+        # Create a proper categorical distribution instance
+        dist = torch.distributions.Categorical(probs=weights)
+        
+        # Sample one action per batch element
+        act = dist.sample()
+        selected_actions.append(act)
+        
+        # Capture the log probability natively through the distribution object
+        log_probs_list.append(dist.log_prob(act))
+        
+        # Apply a mask to prevent sampling the same action again
+        # Setting probability to 0 eliminates it from the next distribution
+        mask = torch.ones_like(weights)
+        mask.scatter_(1, act.unsqueeze(1), 0.0)
+        
+        # Re-normalize to maintain stable probabilities
+        weights = weights * mask
+        weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-8)
+
+    # Convert lists back to tensors matching your original output shapes
+    action = torch.stack(selected_actions, dim=1)
+    log_prob = torch.stack(log_probs_list, dim=1).mean(dim=1)
+    
     return action, log_prob
 
 

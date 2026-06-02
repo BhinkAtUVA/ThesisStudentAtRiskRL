@@ -39,7 +39,7 @@ DATASET_CONFIGS = {
         "Hypernetwork Architecture": {
             "score_column": "shap_value",
             "is_hypernet": True,
-            "model_to_explain_suffix": 'neg_policy_only_loss_epsilon_greedy_reg_sum_sample_without_replacement/',
+            "model_to_explain_suffix": 'neg_policy_only_loss_pareto_hypernet_epsilon_greedy_reg_sum_sample_without_replacement/',
         }
     }
 }

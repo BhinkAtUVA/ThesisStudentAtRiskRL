@@ -21,7 +21,7 @@ class Trainer(ABC):
         pass
 
 # Trainer class for baseline model
-class RLMILTrainer(Trainer):
+class  RLMILTrainer(Trainer):
     def __init__(self, net_container: RLMILBase, **kwargs):
         # self.args = args
         self.net_container = net_container
@@ -62,7 +62,7 @@ class RLMILTrainer(Trainer):
             data_ys, pred_ys, losses, prob_ys = [], [], [], []
             for batch_x, batch_y, _, _ in eval_data:
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_out, loss = self.net_container.predict(self.loss_fn, batch_x, batch_y)
+                pred_out, loss, _ = self.net_container.predict(self.loss_fn, batch_x, batch_y)
                 if self.task_type == 'regression':
                     prob_y = pred_out
                     pred_y = torch.clamp(pred_out, min=self.min_clip, max=self.max_clip)

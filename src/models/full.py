@@ -15,7 +15,7 @@ class NetworkContainer(ABC):
         pass
 
     @abstractmethod
-    def predict(self, loss_fn, batch_x, batch_y) -> tuple[torch.Tensor, float]:
+    def predict(self, loss_fn, batch_x, batch_y) -> tuple[torch.Tensor, float, float | None]:
         pass
     
     @abstractmethod
@@ -77,7 +77,7 @@ class RLMILBase(NetworkContainer):
         self.task_model.eval()
         batch_out = self.task_model(batch_x)
         batch_loss = loss_fn(batch_out.squeeze(), batch_y.squeeze())
-        return batch_out, batch_loss.item()
+        return batch_out, batch_loss.item(), None
     
     def predict_train(self, loss_fn, task_optim, batch_x, batch_y):
         self.task_model.train()
@@ -126,7 +126,7 @@ class HypernetRLMIL(NetworkContainer):
         # self.args = args
         self.num_weights = get_num_weights(self.state_dim, self.hdim)
         self.hyper = MILHypernetwork(1, 256, self.num_weights)
-        self.policy_weights = init_policy_storage(self.state_dim, self.hdim)
+        self.policy_weights = torch.nn.Parameter(init_policy_storage(self.state_dim, self.hdim))
         self.preference = torch.zeros((1))
 
         self.policy = PolicyNetwork(state_dim=self.state_dim, hdim=self.hdim)
@@ -140,11 +140,14 @@ class HypernetRLMIL(NetworkContainer):
         self.debiasing_model = AdversarialMLP(self.hidden_dim, self.hidden_dim // 4, 4)
         self.task_model.mlp[-2].register_forward_hook(self._peek_task_last_hidden)
 
+        self.bias_loss_fn = torch.nn.MSELoss()
+        self.bias_loss_normalizer = torch.nn.Sigmoid()
+
         if kwargs["device"] is not None:
             self.to(kwargs["device"])
     
     def _peek_task_last_hidden(self, module, input, output):
-        self.batch_hidden = output
+        self.batch_hidden = output.detach()
 
     def set_preference(self, value: torch.Tensor):
         self.preference = value
@@ -167,7 +170,7 @@ class HypernetRLMIL(NetworkContainer):
         batch_out = self.task_model(batch_x)
         batch_loss = loss_fn(batch_out.squeeze(), batch_y.squeeze())
         batch_bias_pred = self.debiasing_model(self.batch_hidden)
-        batch_bias_loss = loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values)
+        batch_bias_loss = self.bias_loss_normalizer(self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) / 42)
         return batch_out, batch_loss.item(), batch_bias_loss.item()
     
     def predict_train(self, loss_fn, task_optim, batch_x, batch_y):
@@ -175,10 +178,10 @@ class HypernetRLMIL(NetworkContainer):
         batch_out = self.task_model(batch_x)
         batch_loss = loss_fn(batch_out.squeeze(), batch_y.squeeze())
         batch_bias_pred = self.debiasing_model(self.batch_hidden)
-        batch_bias_loss = loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) # Indices of protected features, maximum is valid because instances of protected features are sparse
-        task_optim.zero_grad()
-        batch_loss.backward()
-        task_optim.step() # Moved to training script for using biases in total_loss
+        batch_bias_loss = self.bias_loss_normalizer(self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) / 42) # Indices of protected features, maximum is valid because instances of protected features are sparse; 42 is a typical value for untrained distances
+        # task_optim.zero_grad() # Moved to training script for using biases in total_loss
+        batch_loss.backward(retain_graph=True)
+        # task_optim.step() # Moved to training script for using biases in total_loss
         return batch_loss.item(), batch_bias_loss
     
     def store_in_buffer(self, transition):
@@ -193,16 +196,17 @@ class HypernetRLMIL(NetworkContainer):
         self.saved_actions, self.rewards = [], []
 
     def normalize_rewards(self, eps=1e-5):
-        R_mean = np.mean(self.rewards)
-        R_std = np.std(self.rewards)
+        rewards_tensor = torch.cat(self.rewards)
+        R_mean = rewards_tensor.mean()
+        R_std = rewards_tensor.std()
         for i, r in enumerate(self.rewards):
-            self.rewards[i] = float((r - R_mean) / (R_std + eps))
+            self.rewards[i] = (r - R_mean) / (R_std + eps)
 
     def to(self, device):
         self.hyper = self.hyper.to(device)
         self.task_model = self.task_model.to(device)
         self.debiasing_model = self.debiasing_model.to(device)
-        self.policy_weights = self.policy_weights.to(device)
+        self.policy_weights = torch.nn.Parameter(self.policy_weights.to(device).detach())
         self.preference = self.preference.to(device)
 
     def state_dict(self):

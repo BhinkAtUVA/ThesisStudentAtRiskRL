@@ -34,7 +34,7 @@ def prepare_data(args, logger):
     else:
         extra_columns = []
 
-    if args.further_extra_columns is not None:
+    if "further_extra_columns" in args and args.further_extra_columns is not None:
         extra_columns.append(args.further_extra_columns)
     
     train_dataframe, label2id, id2label = preprocess_dataframe(df=train_dataframe, dataframe_set="train", label=args.label,
