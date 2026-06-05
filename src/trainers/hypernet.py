@@ -86,8 +86,6 @@ class HypernetRLMILTrainer(RLMILTrainer):
         preference = torch.rand((1), device=device)
         self.net_container.set_preference(preference)
 
-        self.task_optim.zero_grad()
-
         # Get one selection of eval data for computing reward
         self.net_container.policy.eval()
         eval_pool = self.create_pool_data(eval_dataloader, bag_size, train_pool_size, random=only_ensemble)
@@ -150,7 +148,6 @@ class HypernetRLMILTrainer(RLMILTrainer):
             print("Storage parameter gradients are STILL None/Zero!")
 
         optimizer.step()
-        self.task_optim.step()
         
         if scheduler is not None:
             scheduler.step()

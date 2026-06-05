@@ -179,10 +179,10 @@ class HypernetRLMIL(NetworkContainer):
         batch_loss = loss_fn(batch_out.squeeze(), batch_y.squeeze())
         batch_bias_pred = self.debiasing_model(self.batch_hidden)
         batch_bias_loss = self.bias_loss_normalizer(self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) / 42) # Indices of protected features, maximum is valid because instances of protected features are sparse; 42 is a typical value for untrained distances
-        # task_optim.zero_grad() # Moved to training script for using biases in total_loss
-        batch_loss.backward(retain_graph=True)
-        # task_optim.step() # Moved to training script for using biases in total_loss
-        return batch_loss.item(), batch_bias_loss
+        task_optim.zero_grad()
+        batch_loss.backward()
+        task_optim.step()
+        return batch_loss.item(), batch_bias_loss.item()
     
     def store_in_buffer(self, transition):
         if(len(transition) != 2):
