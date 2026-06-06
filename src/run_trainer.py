@@ -13,6 +13,7 @@ from src.models.full import HypernetRLMIL
 from src.trainers.base import Trainer
 from src.trainers.hypernet import HypernetRLMILTrainer
 from src.trainers.util import create_net_container, get_dataloaders, get_model, load_mil_model_from_config, prepare_data
+from src.util.timing import TimingAnalyzer
 from src.utils import (
     get_model_save_directory,
     get_balanced_weights,
@@ -79,9 +80,12 @@ def train(
     initial_stored_weights = net_ct.policy_weights.clone().detach()
     initial_debias_weights = copy.deepcopy(net_ct.debiasing_model.state_dict())
 
+    timer = TimingAnalyzer()
+
     for epoch in range(epochs):
         log_dict = {}
         warmup = epoch < warmup_epochs
+        timer.sub_category("Training")
         total_loss, policy_loss, value_loss, mil_loss, reg_loss, bias_loss, preference = trainer.episode(
             train_dataloader=train_dataloader,
             eval_dataloader=eval_dataloader,
@@ -93,8 +97,10 @@ def train(
             only_ensemble=only_ensemble,
             epsilon=epsilon,
             reg_coef=reg_coef,
-            sample_algorithm=sample_algorithm
+            sample_algorithm=sample_algorithm,
+            timer=timer,
         )
+        timer.next_category("Evaluation")
         # logger.info(f"Finished epoch {epoch}")
         # if not no_wandb and not only_ensemble:
         #     for indx, layer in enumerate(policy_network.actor.actor):
@@ -103,6 +109,7 @@ def train(
         #                     f"parameters/actor_{indx}_bias": wandb.Histogram(layer.bias.cpu().detach().numpy().tolist())})
         #             wandb.log({f"gradients/actor_{indx}_weight": wandb.Histogram(layer.weight.grad.cpu().detach().numpy().tolist()),
         #                     f"gradients/actor_{indx}_bias": wandb.Histogram(layer.bias.grad.cpu().detach().numpy().tolist())})
+        timer.sub_category("Eval Loader")
         trainer.net_container.policy.eval()
         # eval_data = policy_network.select_from_dataloader(eval_dataloader, bag_size)
         eval_pool = trainer.create_pool_data(eval_dataloader, bag_size, eval_pool_size, random=only_ensemble)
@@ -111,6 +118,7 @@ def train(
         early_stopping(reward, trainer.net_container)
 
         if not no_wandb:
+            timer.next_category("Train Loader")
             train_pool = trainer.create_pool_data(train_dataloader, bag_size, eval_pool_size, random=only_ensemble)
             train_reward, _, train_ensemble_reward = trainer.expected_reward_loss(train_pool)
             log_dict.update({"train/total_loss": total_loss,
@@ -219,6 +227,8 @@ def train(
             logger.info(f"Early stopping at epoch {epoch} out of {epochs}")
             break
 
+        timer.up_next_category("Diagnostics")
+        
         current_hyper_weights: dict = trainer.net_container.hyper.state_dict()
         ratios = np.ndarray((0))
         for key, tensor in initial_hyper_weights.items():
@@ -247,6 +257,9 @@ def train(
         ratios[ratios < 1] = 1 / ratios[ratios < 1]
         ratios = ratios[~np.isnan(ratios)]
         logger.info(f"Debias parameters changed on average by a factor of {np.median(ratios)}")
+
+        timer.finish_timing()
+        timer.print_updating()
 
     # load the best model
     trainer.net_container.load_state_dict(torch.load(early_stopping.model_address))
