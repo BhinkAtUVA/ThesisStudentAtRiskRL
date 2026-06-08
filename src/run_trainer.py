@@ -1,3 +1,4 @@
+import datetime
 import os
 
 import numpy as np
@@ -85,21 +86,21 @@ def train(
     for epoch in range(epochs):
         log_dict = {}
         warmup = epoch < warmup_epochs
-        timer.sub_category("Training")
-        total_loss, policy_loss, value_loss, mil_loss, reg_loss, bias_loss, preference = trainer.episode(
-            train_dataloader=train_dataloader,
-            eval_dataloader=eval_dataloader,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            device=device,
-            bag_size=bag_size,
-            train_pool_size=train_pool_size,
-            only_ensemble=only_ensemble,
-            epsilon=epsilon,
-            reg_coef=reg_coef,
-            sample_algorithm=sample_algorithm,
-            timer=timer,
-        )
+        with timer.context_category("Training"):
+            total_loss, policy_loss, value_loss, mil_loss, reg_loss, bias_loss, preference = trainer.episode(
+                train_dataloader=train_dataloader,
+                eval_dataloader=eval_dataloader,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                device=device,
+                bag_size=bag_size,
+                train_pool_size=train_pool_size,
+                only_ensemble=only_ensemble,
+                epsilon=epsilon,
+                reg_coef=reg_coef,
+                sample_algorithm=sample_algorithm,
+                timer=timer,
+            )
         timer.next_category("Evaluation")
         # logger.info(f"Finished epoch {epoch}")
         # if not no_wandb and not only_ensemble:
@@ -119,8 +120,11 @@ def train(
 
         if not no_wandb:
             timer.next_category("Train Loader")
-            train_pool = trainer.create_pool_data(train_dataloader, bag_size, eval_pool_size, random=only_ensemble)
-            train_reward, _, train_ensemble_reward = trainer.expected_reward_loss(train_pool)
+            with timer.context_category("Pool Creation"):
+                train_pool = trainer.create_pool_data(train_dataloader, bag_size, eval_pool_size, random=only_ensemble)
+            with timer.context_category("Expected Reward Loss"):
+                train_reward, _, train_ensemble_reward = trainer.expected_reward_loss(train_pool)
+            timer.sub_category("Until best model test")
             log_dict.update({"train/total_loss": total_loss,
                         "train/policy_loss": policy_loss,
                         "train/value_loss": value_loss,
@@ -145,6 +149,8 @@ def train(
                             f"best/eval_avg_{metric}": reward,
                             f"best/eval_ensemble_{metric}": ensemble_reward})
             wandb.log(log_dict)
+
+            timer.next_category("Best model test")
 
         if run_name:  # sweep
             global BEST_REWARD
@@ -227,6 +233,7 @@ def train(
             logger.info(f"Early stopping at epoch {epoch} out of {epochs}")
             break
 
+        timer.up()
         timer.up_next_category("Diagnostics")
         
         current_hyper_weights: dict = trainer.net_container.hyper.state_dict()
@@ -236,14 +243,14 @@ def train(
             current_ratios = raw_ratios.cpu().numpy()
             ratios = np.concat((ratios, current_ratios))
 
-        ratios[ratios < 1] = 1 / ratios[ratios < 1]
+        ratios = 1 / ratios[(ratios < 1) & (ratios != 0)]
         ratios = ratios[~np.isnan(ratios)]
         logger.info(f"Hypernet parameters changed on average by a factor of {np.median(ratios)}")
 
         current_stored_weights = net_ct.policy_weights.clone().detach()
         ratios = (current_stored_weights / initial_stored_weights).reshape(np.prod(current_stored_weights.shape))
         ratios = ratios.cpu().numpy()
-        ratios[ratios < 1] = 1 / ratios[ratios < 1]
+        ratios = 1 / ratios[(ratios < 1) & (ratios != 0)]
         ratios = ratios[~np.isnan(ratios)]
         logger.info(f"Stored Policy parameters changed on average by a factor of {np.median(ratios)}")
         
@@ -254,7 +261,7 @@ def train(
             current_ratios = raw_ratios.cpu().numpy()
             ratios = np.concat((ratios, current_ratios))
 
-        ratios[ratios < 1] = 1 / ratios[ratios < 1]
+        ratios = 1 / ratios[(ratios < 1) & (ratios != 0)]
         ratios = ratios[~np.isnan(ratios)]
         logger.info(f"Debias parameters changed on average by a factor of {np.median(ratios)}")
 
@@ -273,6 +280,8 @@ def train(
     if not no_wandb:
         wandb.log(dictionary)
     logger.info(dictionary)
+
+    timer.save_dataframe(f"results/TIMING_{datetime.datetime.now().strftime("%d-%m-%Y_%H-%M-%S")}.csv")
     
     return trainer.net_container
 

@@ -47,7 +47,7 @@ for target_label in "${target_labels[@]}"; do
                                             --prefix $prefix \
                                             --bag_size $bag_size \
                                             --embedding_model $embedding_model \
-                                            --train_pool_size 1 --eval_pool_size 10 --test_pool_size 10 \
+                                            --train_pool_size 1 --eval_pool_size 2 --test_pool_size 2 \
                                             --balance_dataset \
                                             --wandb_entity $wandb_entity \
                                             --wandb_project $wandb_project \

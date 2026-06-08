@@ -33,4 +33,4 @@ parameters:
   batch_size:
     distribution: constant
     value: 128
-run_cap: 5
+run_cap: 50

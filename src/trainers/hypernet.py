@@ -23,33 +23,29 @@ class HypernetRLMILTrainer(RLMILTrainer):
     def get_model_constructor():
         return HypernetRLMIL
     
-    def compute_reward(self, eval_data):
+    def compute_reward(self, eval_data, preference):
         with torch.no_grad():
             data_ys, pred_ys, losses, prob_ys, hyper_rewards = [], [], [], [], []
+            for batch_x, batch_y, _, _ in eval_data:
+                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+                pred_out, loss, bias_loss = self.net_container.predict(self.loss_fn, batch_x, batch_y)
 
-            for preference in np.linspace(0, 1, 11):
-                self.net_container.set_preference(torch.fill(torch.zeros((1)), preference).to(self.device))
-                for batch_x, batch_y, _, _ in eval_data:
-                    batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                    pred_out, loss, bias_loss = self.net_container.predict(self.loss_fn, batch_x, batch_y)
+                hyper_rewards.append(preference * bias_loss - (1 - preference) * loss)
 
-                    hyper_rewards.append(preference * bias_loss - (1 - preference) * loss)
-                    if preference != 0: continue
-
-                    if self.task_type == 'regression':
-                        prob_y = pred_out
-                        pred_y = torch.clamp(pred_out, min=self.min_clip, max=self.max_clip)
-                    elif self.task_type == 'classification':
-                        prob_y = torch.softmax(pred_out, dim=1)
-                        pred_y = torch.argmax(pred_out, dim=1)
-                        
-                    pred_ys.append(pred_y.detach().cpu())
-                    prob_ys.append(prob_y.detach().cpu())
-                    data_ys.append(batch_y.detach().cpu())
-                    losses.append(loss)
-                pred_Y = torch.cat(pred_ys, dim=0)
-                data_Y = torch.cat(data_ys, dim=0)
-                prob_Y = torch.cat(prob_ys, dim=0)
+                if self.task_type == 'regression':
+                    prob_y = pred_out
+                    pred_y = torch.clamp(pred_out, min=self.min_clip, max=self.max_clip)
+                elif self.task_type == 'classification':
+                    prob_y = torch.softmax(pred_out, dim=1)
+                    pred_y = torch.argmax(pred_out, dim=1)
+                    
+                pred_ys.append(pred_y.detach().cpu())
+                prob_ys.append(prob_y.detach().cpu())
+                data_ys.append(batch_y.detach().cpu())
+                losses.append(loss)
+            pred_Y = torch.cat(pred_ys, dim=0)
+            data_Y = torch.cat(data_ys, dim=0)
+            prob_Y = torch.cat(prob_ys, dim=0)
             if self.task_type == 'classification':
                 reward = f1_score(data_Y.data, pred_Y.data, average='macro')
             elif self.task_type == 'regression':   
@@ -58,8 +54,11 @@ class HypernetRLMILTrainer(RLMILTrainer):
 
     def expected_reward_loss(self, pool_data, average='macro', verbos=False):
         reward_pool, loss_pool, preds_pool, hyper_reward_pool = [], [], [], []
-        for data in pool_data:
-            reward, loss, preds, labels, hyper_reward = self.compute_reward(data)
+
+        prefs = np.linspace(0, 1, len(pool_data))
+        for data, pref in zip(pool_data, prefs):
+            self.net_container.set_preference(torch.fill(torch.zeros((1)), pref).to(self.device))
+            reward, loss, preds, labels, hyper_reward = self.compute_reward(data, pref)
             reward_pool.append(reward)
             loss_pool.append(loss)
             preds_pool.append(preds)
@@ -144,8 +143,6 @@ class HypernetRLMILTrainer(RLMILTrainer):
             scheduler.step()
         # reset rewards and action buffer
         self.net_container.reset_buffers()
-
-        timer.up()
 
         return total_loss.item(), policy_loss.item(), 0, \
             np.mean(sel_losses), reg_coef * regularization_loss.item(), bias_loss, preference.item()

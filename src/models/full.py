@@ -127,6 +127,7 @@ class HypernetRLMIL(NetworkContainer):
         self.num_weights = get_num_weights(self.state_dim, self.hdim)
         self.hyper = MILHypernetwork(1, 256, self.num_weights)
         self.policy_weights = torch.nn.Parameter(init_policy_storage(self.state_dim, self.hdim))
+        self.cached_policy = None
         self.preference = torch.zeros((1))
 
         self.policy = PolicyNetwork(state_dim=self.state_dim, hdim=self.hdim)
@@ -151,6 +152,7 @@ class HypernetRLMIL(NetworkContainer):
 
     def set_preference(self, value: torch.Tensor):
         self.preference = value
+        self.cached_policy = None
 
     def action(self, batch_x):
         if self.no_autoencoder:
@@ -158,10 +160,11 @@ class HypernetRLMIL(NetworkContainer):
         else:
             batch_rep = self.task_model.base_network(batch_x).detach()
 
-        hyper_weights = self.hyper(self.preference)
-        combined_weights = pack_weights(hyper_weights, self.policy_weights, 0.05, self.state_dim, self.hdim)
+        if self.cached_policy is None:
+            hyper_weights = self.hyper(self.preference)
+            self.cached_policy = pack_weights(hyper_weights, self.policy_weights, 0.05, self.state_dim, self.hdim)
 
-        action_probs, exp_reward = functional_call(self.policy, combined_weights, batch_rep)
+        action_probs, exp_reward = functional_call(self.policy, self.cached_policy, batch_rep)
 
         return action_probs, batch_rep, exp_reward
     
@@ -193,7 +196,7 @@ class HypernetRLMIL(NetworkContainer):
         self.preferences.append(self.preference.item())
 
     def reset_buffers(self):
-        self.saved_actions, self.rewards = [], []
+        self.saved_actions, self.rewards, self.cached_policy = [], [], None
 
     def normalize_rewards(self, eps=1e-5):
         rewards_tensor = torch.cat(self.rewards)
@@ -208,6 +211,7 @@ class HypernetRLMIL(NetworkContainer):
         self.debiasing_model = self.debiasing_model.to(device)
         self.policy_weights = torch.nn.Parameter(self.policy_weights.to(device).detach())
         self.preference = self.preference.to(device)
+        self.cached_policy = None
 
     def state_dict(self):
         return {
@@ -222,3 +226,4 @@ class HypernetRLMIL(NetworkContainer):
         if self.policy_weights.get_device() >= 0: policy_weights = policy_weights.to(self.policy_weights.get_device())
         self.policy_weights = policy_weights
         self.debiasing_model.load_state_dict(state_dict["debias"])
+        self.cached_policy = None
