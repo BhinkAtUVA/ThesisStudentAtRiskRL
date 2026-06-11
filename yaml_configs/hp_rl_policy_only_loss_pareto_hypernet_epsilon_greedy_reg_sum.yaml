@@ -9,13 +9,6 @@ parameters:
   epochs:
     distribution: constant
     value: 200
-  actor_learning_rate:
-    distribution: log_uniform_values
-    max: 1.0e-02
-    min: 1.0e-06
-  critic_learning_rate:
-    distribution: constant
-    value: 0
   learning_rate:
     distribution: constant
     value: 1.0e-03
@@ -33,4 +26,15 @@ parameters:
   batch_size:
     distribution: constant
     value: 128
+  embedding_dim:
+    distribution: categorical
+    values: [32, 64, 128, 256]
+  fourier_scale:
+    distribution: log_uniform_values
+    min: 1.0
+    max: 10.0
+  hyper_ratio:
+    distribution: log_uniform_values
+    min: 0.005
+    max: 0.2
 run_cap: 50

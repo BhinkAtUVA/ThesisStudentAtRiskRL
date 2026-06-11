@@ -5,7 +5,8 @@ import torch
 from torch.func import functional_call
 
 from src.models.adversary import AdversarialMLP
-from src.models.hypernet import MILHypernetwork, get_num_weights, init_policy_storage, pack_weights
+from src.models.hypernet import FourierMILHypernetwork, MILHypernetwork, get_num_weights, init_policy_storage, pack_weights
+from src.models.mil import BaseMLP
 from src.models.rl import PolicyNetwork
 
 # Utility for better typing
@@ -125,13 +126,14 @@ class HypernetRLMIL(NetworkContainer):
 
         # self.args = args
         self.num_weights = get_num_weights(self.state_dim, self.hdim)
-        self.hyper = MILHypernetwork(1, 256, self.num_weights)
+        self.hyper = FourierMILHypernetwork(1, 512, self.num_weights, kwargs["embedding_dim"] or 64, kwargs["fourier_scale"] or 5.0)
         self.policy_weights = torch.nn.Parameter(init_policy_storage(self.state_dim, self.hdim))
         self.cached_policy = None
-        self.preference = torch.zeros((1))
+        self.hyper_ratio = kwargs["hyper_ratio"] or 0.05
+        self.preference = torch.zeros((1), requires_grad=True)
 
         self.policy = PolicyNetwork(state_dim=self.state_dim, hdim=self.hdim)
-        self.task_model = kwargs['task_model']
+        self.task_model: BaseMLP = kwargs['task_model']
         self.no_autoencoder = kwargs.get('no_autoencoder', False)
 
         self.saved_actions = []
@@ -162,7 +164,7 @@ class HypernetRLMIL(NetworkContainer):
 
         if self.cached_policy is None:
             hyper_weights = self.hyper(self.preference)
-            self.cached_policy = pack_weights(hyper_weights, self.policy_weights, 0.05, self.state_dim, self.hdim)
+            self.cached_policy = pack_weights(hyper_weights, self.policy_weights, self.hyper_ratio, self.state_dim, self.hdim)
 
         action_probs, exp_reward = functional_call(self.policy, self.cached_policy, batch_rep)
 

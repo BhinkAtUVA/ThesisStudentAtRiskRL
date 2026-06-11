@@ -40,6 +40,60 @@ class MILHypernetwork(nn.Module):
         x = self.mlp(x)  # Apply the MLP
         return x
 
+# Transforms low dimensional vectors into high dimensional frequency-based embeddings
+class FourierEmbedding(nn.Module):
+    def __init__(self, in_features=1, embedding_dim=64, scale=5.0):
+        super().__init__()
+        assert embedding_dim % 2 == 0, "Embedding dimension must be even"
+        self.embedding_dim = embedding_dim
+        
+        # Sample random frequencies
+        self.register_buffer("B", torch.randn(in_features, embedding_dim // 2) * scale)
+
+    def forward(self, x: torch.Tensor):
+        projection = 2 * math.pi * x @ self.B
+        sin_comp, cos_comp = torch.sin(projection), torch.cos(projection)
+        return torch.cat([sin_comp, cos_comp], dim=-1)
+    
+class FourierMILHypernetwork(nn.Module):
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int,
+        num_weights: int,
+        embedding_dim: int = 64,
+        fourier_scale: float = 5.0,
+        dropout_p: float = 0.5,
+    ):
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.num_weights = num_weights
+        self.fourier_scale = fourier_scale
+        self.dropout_p = dropout_p  # register the droupout probability as a buffer
+
+        self.mlp = nn.Sequential(
+            FourierEmbedding(self.input_dim, self.embedding_dim, self.fourier_scale),
+            nn.Linear(self.embedding_dim, self.hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(p=self.dropout_p),
+            nn.Linear(self.hidden_dim, self.num_weights),
+            nn.Sigmoid()
+        )
+
+        self.initialize_weights()
+
+    def initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.mlp(x)  # Apply the MLP
+        return x
+
 # Utility for typing tensors holding the actual parameters belonging to a network controlled by a hypernetwork
 class MILParamStorage(torch.Tensor):
     pass

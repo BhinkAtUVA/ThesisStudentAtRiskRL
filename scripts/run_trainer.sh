@@ -60,7 +60,7 @@ for target_label in "${target_labels[@]}"; do
                                                 --rl_task_model $rl_task_model \
                                                 --sample_algorithm $sample_algorithm \
                                                 --reg_alg $reg_alg \
-                                                ; #--run_sweep ;
+                                                --run_sweep ;
             ((current_run++))
         done
 

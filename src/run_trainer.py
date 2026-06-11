@@ -299,6 +299,9 @@ def main_sweep():
     args.learning_rate = config.learning_rate
     args.epochs = config.epochs
     args.hdim = config.hdim
+    args.embedding_dim = config.embedding_dim
+    args.fourier_scale = config.fourier_scale
+    args.hyper_ratio = config.hyper_ratio
     args.early_stopping_patience = config.early_stopping_patience
     args.warmup_epochs = config.get("warmup_epochs", 0)
     args.epsilon = config.get("epsilon", 0)
@@ -398,6 +401,9 @@ def main():
     args.learning_rate = config.learning_rate
     args.epochs = config.epochs
     args.hdim = config.hdim
+    args.embedding_dim = config.embedding_dim
+    args.fourier_scale = config.fourier_scale
+    args.hyper_ratio = config.hyper_ratio
     args.early_stopping_patience = config.early_stopping_patience
     args.warmup_epochs = config.warmup_epochs if config.warmup_epochs is not None else 0
     args.epsilon = config.epsilon if config.epsilon is not None else 0
@@ -417,7 +423,7 @@ def main():
 
     optimizer = optim.AdamW(
         [{"params": net_container.hyper.parameters(),
-          "lr": 100,},
+          "lr": 0.1,},
          {"params": [net_container.policy_weights],
           "lr": args.learning_rate,},
          {"params": net_container.debiasing_model.parameters(),
