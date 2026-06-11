@@ -123,10 +123,10 @@ def get_counts_for_split(bags_list, df_source, score_column, bag_to_labels_map):
             counts[bag_labels[idx]] += 1
     return counts
 
-def load_rl_model(run_dir_path) -> NetworkContainer:
+def load_rl_model(run_dir_path, load_best=True) -> NetworkContainer:
     print("Attempting to load RL model...")
     device = torch.device(f"cuda:0" if torch.cuda.is_available() else "cpu")
-    model_weights_path = os.path.join(run_dir_path, 'sweep_best_model.pt')
+    model_weights_path = os.path.join(run_dir_path, 'sweep_best_model.pt' if load_best else 'model.pt')
     rl_config_path = os.path.join(run_dir_path, 'sweep_best_model_config.json')
     mil_config_path = os.path.join(run_dir_path, '..', 'best_model_config.json')
     mil_weights_path = os.path.join(run_dir_path, '..', 'best_model.pt')
@@ -282,7 +282,7 @@ if __name__ == "__main__":
 
                 if model_config["is_hypernet"]:
                     for preference in np.linspace(0, 1, 11):
-                        shap_filename = f"shap_scores_{POOLING_METHOD_TO_ANALYZE}_seed_{SEED_TO_ANALYZE}_pref_{str(preference).replace(".", "-")}.csv"
+                        shap_filename = f"shap_scores_{POOLING_METHOD_TO_ANALYZE}_seed_{SEED_TO_ANALYZE}_pref_{str(round(preference, 1)).replace(".", "-")}.csv"
                         shap_output_file = os.path.join(DATASET_CONFIGS['output_dir'], shap_filename)
                         if os.path.exists(shap_output_file): continue
 

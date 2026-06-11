@@ -63,7 +63,7 @@ def init_policy_storage(state_dim: int, hdim: int) -> MILParamStorage:
         (1, hdim),
         (1)
     ]:
-        if type(shape) != tuple or len(shape) == 1: tensors.append(torch.fill(torch.zeros(shape), 0.01))
+        if type(shape) != tuple or len(shape) == 1: tensors.append(torch.fill(torch.zeros(shape, requires_grad=True), 0.01))
         else: tensors.append(torch.nn.init.xavier_uniform_(torch.zeros(shape)).reshape((np.prod(shape))))
     return torch.cat(tensors).detach()
 

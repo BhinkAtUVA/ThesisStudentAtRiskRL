@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.metrics import f1_score, r2_score
 import torch
+from torch import optim
 
 from src.models.full import HypernetRLMIL
 from src.models.rl import sample_action, select_from_action
@@ -18,6 +19,14 @@ class HypernetRLMILTrainer(RLMILTrainer):
             max_clip=kwargs['max_clip'],
             sample_algorithm=kwargs['sample_algorithm'],
         )
+        try:
+            self.task_optim = optim.AdamW([
+                { "params": self.net_container.task_model.parameters() },
+                { "params": self.net_container.debiasing_model.parameters(), "lr": 1.0e-05 } # Train the debiasing model slowly to allow hypernet to make meaningful adjustments
+            ], lr=self.learning_rate)
+        except:
+            self.task_optim = None
+
         self.net_container = net_container
 
     def get_model_constructor():
@@ -52,12 +61,13 @@ class HypernetRLMILTrainer(RLMILTrainer):
                 reward = r2_score(data_Y.data, pred_Y.data)
         return reward, np.mean(losses), prob_Y, data_Y, np.mean(hyper_rewards)
 
-    def expected_reward_loss(self, pool_data, average='macro', verbos=False):
+    def expected_reward_loss(self, pool_data, balance_preference=True, average='macro', verbos=False):
         reward_pool, loss_pool, preds_pool, hyper_reward_pool = [], [], [], []
+        self.net_container.cached_policy = None
 
         prefs = np.linspace(0, 1, len(pool_data))
         for data, pref in zip(pool_data, prefs):
-            self.net_container.set_preference(torch.fill(torch.zeros((1)), pref).to(self.device))
+            if balance_preference: self.net_container.set_preference(torch.fill(torch.zeros((1)), pref).to(self.device))
             reward, loss, preds, labels, hyper_reward = self.compute_reward(data, pref)
             reward_pool.append(reward)
             loss_pool.append(loss)
@@ -66,6 +76,7 @@ class HypernetRLMILTrainer(RLMILTrainer):
         mean_reward = np.mean(reward_pool)
         mean_loss = np.mean(loss_pool)
         mean_hyper_reward = np.mean(hyper_reward_pool)
+        self.net_container.cached_policy = None
         return mean_reward, mean_loss, mean_hyper_reward
     
     def episode(
@@ -85,7 +96,7 @@ class HypernetRLMILTrainer(RLMILTrainer):
     ):
         timer.sub_category("Batches")
         # Sample preference and apply it to the hypernet
-        preference = torch.rand((1), device=device)
+        preference = torch.rand((1), device=device, requires_grad=True)
         self.net_container.set_preference(preference)
 
         # Get one selection of eval data for computing reward
@@ -110,8 +121,8 @@ class HypernetRLMILTrainer(RLMILTrainer):
             self.net_container.policy.eval()
             # reward = policy_network.compute_reward(eval_data)
             if not only_ensemble:
-                reward, _, _ = self.expected_reward_loss(eval_pool)
-                reward = (1 - preference) * reward + preference * bias_loss
+                _, loss, _ = self.expected_reward_loss(eval_pool, balance_preference=False)
+                reward = (1 - preference) * (-loss) + preference * bias_loss
                 self.net_container.store_in_buffer((action_log_prob, reward))
                 regularization_losses.append(action_probs.sum(dim=-1).mean(dim=-1))
 
@@ -134,6 +145,7 @@ class HypernetRLMILTrainer(RLMILTrainer):
         bias_loss = np.mean(bias_losses)
         regularization_loss = torch.stack(regularization_losses).mean() / 100
         total_loss = 1000 * (policy_loss + reg_coef * regularization_loss) # The gradients are very small, so we blow up the loss artificially here
+
         # perform backprop
         total_loss.backward()
 

@@ -1,3 +1,4 @@
+from argparse import Namespace
 import datetime
 import os
 
@@ -11,6 +12,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from src.configs import parse_args
 from src.logger import get_logger
 from src.models.full import HypernetRLMIL
+from src.results.metrics import load_rl_model
 from src.trainers.base import Trainer
 from src.trainers.hypernet import HypernetRLMILTrainer
 from src.trainers.util import create_net_container, get_dataloaders, get_model, load_mil_model_from_config, prepare_data
@@ -18,7 +20,8 @@ from src.util.timing import TimingAnalyzer
 from src.utils import (
     get_model_save_directory,
     get_balanced_weights,
-    EarlyStopping, save_json
+    EarlyStopping,
+    load_json, save_json
 )
 
 import copy
@@ -116,7 +119,7 @@ def train(
         eval_pool = trainer.create_pool_data(eval_dataloader, bag_size, eval_pool_size, random=only_ensemble)
         reward, eval_loss, ensemble_reward = trainer.expected_reward_loss(eval_pool)
         
-        early_stopping(reward, trainer.net_container)
+        early_stopping(ensemble_reward, trainer.net_container)
 
         if not no_wandb:
             timer.next_category("Train Loader")
@@ -235,35 +238,29 @@ def train(
 
         timer.up()
         timer.up_next_category("Diagnostics")
+
+        def get_ratios(current: dict[str, torch.Tensor], initial: dict[str, torch.Tensor]):
+            np_list = np.ndarray((0))
+            for key, tensor in current.items():
+                rshape = (tensor / initial[key]).reshape((np.prod(tensor.shape)))
+                new_items = rshape.cpu().numpy()
+                np_list = np.concat((np_list, new_items))
+            return np_list
         
-        current_hyper_weights: dict = trainer.net_container.hyper.state_dict()
-        ratios = np.ndarray((0))
-        for key, tensor in initial_hyper_weights.items():
-            raw_ratios = (tensor / current_hyper_weights[key]).reshape((np.prod(tensor.shape)))
-            current_ratios = raw_ratios.cpu().numpy()
-            ratios = np.concat((ratios, current_ratios))
-
-        ratios = 1 / ratios[(ratios < 1) & (ratios != 0)]
-        ratios = ratios[~np.isnan(ratios)]
-        logger.info(f"Hypernet parameters changed on average by a factor of {np.median(ratios)}")
-
-        current_stored_weights = net_ct.policy_weights.clone().detach()
-        ratios = (current_stored_weights / initial_stored_weights).reshape(np.prod(current_stored_weights.shape))
-        ratios = ratios.cpu().numpy()
-        ratios = 1 / ratios[(ratios < 1) & (ratios != 0)]
-        ratios = ratios[~np.isnan(ratios)]
-        logger.info(f"Stored Policy parameters changed on average by a factor of {np.median(ratios)}")
+        def get_clean_median_ratio(ratios: np.ndarray):
+            ratios = ratios[(ratios != 0) & ~(np.isnan(ratios))]
+            if len(ratios) == 0: return 1
+            ratios[ratios < 1] = 1 / ratios[ratios < 1]            
+            return np.median(ratios)
         
-        current_debias_weights: dict = trainer.net_container.debiasing_model.state_dict()
-        ratios = np.ndarray((0))
-        for key, tensor in initial_debias_weights.items():
-            raw_ratios = (tensor / current_debias_weights[key]).reshape((np.prod(tensor.shape)))
-            current_ratios = raw_ratios.cpu().numpy()
-            ratios = np.concat((ratios, current_ratios))
+        ratios = get_ratios(trainer.net_container.hyper.state_dict(), initial_hyper_weights)
+        logger.info(f"Hypernet parameters changed on average by a factor of {get_clean_median_ratio(ratios)}")
 
-        ratios = 1 / ratios[(ratios < 1) & (ratios != 0)]
-        ratios = ratios[~np.isnan(ratios)]
-        logger.info(f"Debias parameters changed on average by a factor of {np.median(ratios)}")
+        ratios = get_ratios({"a": net_ct.policy_weights.clone().detach()}, {"a": initial_stored_weights})
+        logger.info(f"Stored Policy parameters changed on average by a factor of {get_clean_median_ratio(ratios)}")
+        
+        ratios = get_ratios(trainer.net_container.debiasing_model.state_dict(), initial_debias_weights)
+        logger.info(f"Debias parameters changed on average by a factor of {get_clean_median_ratio(ratios)}")
 
         timer.finish_timing()
         timer.print_updating()
@@ -347,26 +344,6 @@ def main_sweep():
         sample_algorithm = args.sample_algorithm
     ) # TODO: Make parameter for trainer
 
-    try:
-        best_model, _ = get_model(run_dir)
-        best_trainer = HypernetRLMILTrainer(
-            net_container = best_model,
-            learning_rate = args.learning_rate,
-            device = DEVICE,
-            task_type = args.task_type,
-            min_clip = args.min_clip,
-            max_clip = args.max_clip,
-            sample_algorithm = args.sample_algorithm
-        )
-
-        # If there has been a sweep before, the best model of that sweep is the status quo
-        global BEST_REWARD
-        eval_pool = trainer.create_pool_data(current_eval_dataloader, args.bag_size, args.eval_pool_size, random=args.only_ensemble)
-        _, _, ensemble_reward = best_trainer.expected_reward_loss(eval_pool)
-        BEST_REWARD = ensemble_reward
-    except:
-        pass # There was no sweep yet
-
     net_container = train(
         trainer=trainer,
         optimizer=optimizer,
@@ -413,18 +390,40 @@ def main():
             project=args.wandb_project,
             name=f"RL_{args.model_name}_{args.label}_{args.bag_size}_2sided_ExponentialLR",
         )
-    
-    args.device = DEVICE
-    # # Model Optimizer Scheduler EarlyStopping
-    policy_network = create_net_container(args, run_dir)
-    policy_network = policy_network.to(DEVICE)
 
-    optimizer = optim.AdamW([{"params": policy_network.actor.parameters(),
-                              "lr": args.actor_learning_rate,},
-                             {"params": policy_network.critic.parameters(),
-                              "lr": args.critic_learning_rate,
-                              },],
-                            lr=args.learning_rate,)
+    config = Namespace(**load_json(os.path.join(run_dir, "sweep_best_model_config.json")))
+
+    args.critic_learning_rate = config.critic_learning_rate
+    args.actor_learning_rate = config.actor_learning_rate
+    args.learning_rate = config.learning_rate
+    args.epochs = config.epochs
+    args.hdim = config.hdim
+    args.early_stopping_patience = config.early_stopping_patience
+    args.warmup_epochs = config.warmup_epochs if config.warmup_epochs is not None else 0
+    args.epsilon = config.epsilon if config.epsilon is not None else 0
+    args.no_wandb = False
+    
+    args.batch_size = config.batch_size
+    args.device = DEVICE
+
+    global train_dataset, eval_dataset, test_dataset 
+    current_train_dataloader, current_eval_dataloader, current_test_dataloader = \
+        get_dataloaders(args, train_dataset, eval_dataset, test_dataset, logger)
+    logger.info(f"SWEEP DEBUG: Recreated dataloaders with batch_size = {args.batch_size}")
+
+    # # Model Optimizer Scheduler EarlyStopping
+    net_container = load_rl_model(run_dir, load_best=False)
+    net_container.to(DEVICE)
+
+    optimizer = optim.AdamW(
+        [{"params": net_container.hyper.parameters(),
+          "lr": 100,},
+         {"params": [net_container.policy_weights],
+          "lr": args.learning_rate,},
+         {"params": net_container.debiasing_model.parameters(),
+          "lr": args.learning_rate,}],
+        lr=args.learning_rate,
+    )
     
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_dataloader))
@@ -433,15 +432,25 @@ def main():
                                    save_model_name=f"checkpoint.pt",
                                    trace_func=logger.info, patience=args.early_stopping_patience, verbose=True,
                                    descending=False)
+    
+    trainer = HypernetRLMILTrainer(
+        net_container = net_container,
+        learning_rate = args.learning_rate,
+        device = DEVICE,
+        task_type = args.task_type,
+        min_clip = args.min_clip,
+        max_clip = args.max_clip,
+        sample_algorithm = args.sample_algorithm
+    ) 
 
-    policy_network = train(
-        policy_network=policy_network,
+    net_container = train(
+        trainer=trainer,
         optimizer=optimizer,
         scheduler=scheduler,
         early_stopping=early_stopping,
-        train_dataloader=train_dataloader,
-        eval_dataloader=eval_dataloader,
-        test_dataloader=test_dataloader,
+        train_dataloader=current_train_dataloader,
+        eval_dataloader=current_eval_dataloader,
+        test_dataloader=current_test_dataloader,
         device=DEVICE,
         bag_size=args.bag_size,
         epochs=args.epochs,
@@ -459,7 +468,7 @@ def main():
         reg_coef=args.reg_coef,
         sample_algorithm=args.sample_algorithm
     )
-    torch.save(policy_network.state_dict(),
+    torch.save(net_container.state_dict(),
                 os.path.join(early_stopping.models_dir, f"model.pt",))
 
     if not args.no_wandb:

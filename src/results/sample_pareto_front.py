@@ -20,7 +20,7 @@ for model_name, model_config in DATASET_CONFIGS['models'].items():
     if not model_config["is_hypernet"]: continue
 
     model_dir = os.path.join(DATASET_CONFIGS['base_path'], model_config['model_to_explain_suffix'])
-    net_container: HypernetRLMIL = load_rl_model(model_dir) # Assumes load_rl_model is defined
+    net_container: HypernetRLMIL = load_rl_model(model_dir, load_best=False) # Assumes load_rl_model is defined
     net_container.to(device)
     
     with open(os.path.join(model_dir, "sweep_best_model_config.json"), "r") as f: rl_config = json.load(f)

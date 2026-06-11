@@ -184,6 +184,7 @@ class HypernetRLMIL(NetworkContainer):
         batch_bias_loss = self.bias_loss_normalizer(self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) / 42) # Indices of protected features, maximum is valid because instances of protected features are sparse; 42 is a typical value for untrained distances
         task_optim.zero_grad()
         batch_loss.backward()
+        batch_bias_loss.backward()
         task_optim.step()
         return batch_loss.item(), batch_bias_loss.item()
     
@@ -217,7 +218,8 @@ class HypernetRLMIL(NetworkContainer):
         return {
             "hyper": self.hyper.state_dict(),
             "storage": self.policy_weights,
-            "debias": self.debiasing_model.state_dict()
+            "debias": self.debiasing_model.state_dict(),
+            "task": self.task_model.state_dict()
         }
     
     def load_state_dict(self, state_dict):
@@ -226,4 +228,5 @@ class HypernetRLMIL(NetworkContainer):
         if self.policy_weights.get_device() >= 0: policy_weights = policy_weights.to(self.policy_weights.get_device())
         self.policy_weights = policy_weights
         self.debiasing_model.load_state_dict(state_dict["debias"])
+        if "task" in state_dict: self.task_model.load_state_dict(state_dict["task"])
         self.cached_policy = None

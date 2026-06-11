@@ -31,7 +31,8 @@ rl_model="policy_only"
 search_algorithm="epsilon_greedy"
 reg_alg="sum"
 
-total_runs=$((${#baseline_types[@]} * ${#target_labels[@]} * ${#bag_sizes[@]} * ${#embedding_models[@]}))
+repeats=10
+total_runs=$((${#baseline_types[@]} * ${#target_labels[@]} * ${#bag_sizes[@]} * ${#embedding_models[@]} * $repeats))
 current_run=1
 
 for target_label in "${target_labels[@]}"; do
@@ -41,25 +42,28 @@ for target_label in "${target_labels[@]}"; do
         gpu=${gpus[$target_label_index]}
         echo "$baseline_type $target_label, bag_size_$bag_size, $embedding_model, gpu_$gpu ($current_run/$total_runs)"
 
-        CUDA_VISIBLE_DEVICES=$gpu python -m src.run_trainer --rl --baseline $baseline_type \
-                                            --label $target_label \
-                                            --data_embedded_column_name $data_embedded_column_name \
-                                            --prefix $prefix \
-                                            --bag_size $bag_size \
-                                            --embedding_model $embedding_model \
-                                            --train_pool_size 1 --eval_pool_size 2 --test_pool_size 2 \
-                                            --balance_dataset \
-                                            --wandb_entity $wandb_entity \
-                                            --wandb_project $wandb_project \
-                                            --random_seed $random_seed \
-                                            --task_type $task_type \
-                                            --rl_model $rl_model \
-                                            --search_algorithm $search_algorithm \
-                                            --rl_task_model $rl_task_model \
-                                            --sample_algorithm $sample_algorithm \
-                                            --reg_alg $reg_alg \
-                                            --run_sweep ;
-        ((current_run++))
+        for i in $(seq 1 $repeats); do # Loop for continued training
+            CUDA_VISIBLE_DEVICES=$gpu python -m src.run_trainer --rl --baseline $baseline_type \
+                                                --label $target_label \
+                                                --data_embedded_column_name $data_embedded_column_name \
+                                                --prefix $prefix \
+                                                --bag_size $bag_size \
+                                                --embedding_model $embedding_model \
+                                                --train_pool_size 1 --eval_pool_size 2 --test_pool_size 2 \
+                                                --balance_dataset \
+                                                --wandb_entity $wandb_entity \
+                                                --wandb_project $wandb_project \
+                                                --random_seed $random_seed \
+                                                --task_type $task_type \
+                                                --rl_model $rl_model \
+                                                --search_algorithm $search_algorithm \
+                                                --rl_task_model $rl_task_model \
+                                                --sample_algorithm $sample_algorithm \
+                                                --reg_alg $reg_alg \
+                                                ; #--run_sweep ;
+            ((current_run++))
+        done
+
       done
     done
   done
