@@ -32,6 +32,17 @@ class HypernetRLMILTrainer(RLMILTrainer):
     def get_model_constructor():
         return HypernetRLMIL
     
+    def make_optimizer(net_container: HypernetRLMIL, learning_rate):
+        return optim.AdamW(
+            [{"params": net_container.hyper.parameters(),
+            "lr": 0.1,},
+            {"params": [net_container.policy_weights],
+            "lr": learning_rate,},
+            {"params": net_container.debiasing_model.parameters(),
+            "lr": learning_rate,}],
+            lr=learning_rate,
+        )
+    
     def compute_reward(self, eval_data, preference):
         with torch.no_grad():
             data_ys, pred_ys, losses, prob_ys, hyper_rewards = [], [], [], [], []

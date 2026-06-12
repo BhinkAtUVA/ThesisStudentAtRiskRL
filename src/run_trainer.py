@@ -46,6 +46,7 @@ import copy
 
 def train(
         trainer: Trainer,
+        variant: str,
         optimizer,
         scheduler,
         early_stopping,
@@ -80,10 +81,11 @@ def train(
     
     # logger.info(f"Training model started ....")
 
-    net_ct: HypernetRLMIL = trainer.net_container
-    initial_hyper_weights = copy.deepcopy(net_ct.hyper.state_dict())
-    initial_stored_weights = net_ct.policy_weights.clone().detach()
-    initial_debias_weights = copy.deepcopy(net_ct.debiasing_model.state_dict())
+    if variant == "hypernet":
+        net_ct: HypernetRLMIL = trainer.net_container
+        initial_hyper_weights = copy.deepcopy(net_ct.hyper.state_dict())
+        initial_stored_weights = net_ct.policy_weights.clone().detach()
+        initial_debias_weights = copy.deepcopy(net_ct.debiasing_model.state_dict())
 
     timer = TimingAnalyzer()
 
@@ -91,7 +93,7 @@ def train(
         log_dict = {}
         warmup = epoch < warmup_epochs
         with timer.context_category("Training"):
-            total_loss, policy_loss, value_loss, mil_loss, reg_loss, bias_loss, preference = trainer.episode(
+            result = trainer.episode(
                 train_dataloader=train_dataloader,
                 eval_dataloader=eval_dataloader,
                 optimizer=optimizer,
@@ -105,6 +107,10 @@ def train(
                 sample_algorithm=sample_algorithm,
                 timer=timer,
             )
+            if variant == "baseline":
+                total_loss, policy_loss, value_loss, mil_loss, reg_loss = result
+            elif variant == "hypernet":
+                total_loss, policy_loss, value_loss, mil_loss, reg_loss, bias_loss, preference = result
         timer.next_category("Evaluation")
         # logger.info(f"Finished epoch {epoch}")
         # if not no_wandb and not only_ensemble:
@@ -133,8 +139,8 @@ def train(
                         "train/policy_loss": policy_loss,
                         "train/value_loss": value_loss,
                         "train/reg_loss": reg_loss,
-                        "train/bias_loss": bias_loss,
-                        "train/preference": preference,
+                        "train/bias_loss": bias_loss if variant == "hypernet" else None,
+                        "train/preference": preference if variant == "hypernet" else None,
                         "train/mil_loss": mil_loss,
                         "eval/avg_mil_loss": eval_loss,
                         f"train/avg_{metric}": train_reward,
@@ -240,31 +246,32 @@ def train(
         timer.up()
         timer.up_next_category("Diagnostics")
 
-        def get_ratios(current: dict[str, torch.Tensor], initial: dict[str, torch.Tensor]):
-            np_list = np.ndarray((0))
-            for key, tensor in current.items():
-                rshape = (tensor / initial[key]).reshape((np.prod(tensor.shape)))
-                new_items = rshape.cpu().numpy()
-                np_list = np.concat((np_list, new_items))
-            return np_list
-        
-        def get_clean_median_ratio(ratios: np.ndarray):
-            ratios = ratios[(ratios != 0) & ~(np.isnan(ratios))]
-            if len(ratios) == 0: return 1
-            ratios[ratios < 1] = 1 / ratios[ratios < 1]            
-            return np.median(ratios)
-        
-        ratios = get_ratios(trainer.net_container.hyper.state_dict(), initial_hyper_weights)
-        logger.info(f"Hypernet parameters changed on average by a factor of {get_clean_median_ratio(ratios)}")
+        if variant == "hypernet":
+            def get_ratios(current: dict[str, torch.Tensor], initial: dict[str, torch.Tensor]):
+                np_list = np.ndarray((0))
+                for key, tensor in current.items():
+                    rshape = (tensor / initial[key]).reshape((np.prod(tensor.shape)))
+                    new_items = rshape.cpu().numpy()
+                    np_list = np.concat((np_list, new_items))
+                return np_list
+            
+            def get_clean_median_ratio(ratios: np.ndarray):
+                ratios = ratios[(ratios != 0) & ~(np.isnan(ratios))]
+                if len(ratios) == 0: return 1
+                ratios[ratios < 1] = 1 / ratios[ratios < 1]            
+                return np.median(ratios)
+            
+            ratios = get_ratios(trainer.net_container.hyper.state_dict(), initial_hyper_weights)
+            logger.info(f"Hypernet parameters changed on average by a factor of {get_clean_median_ratio(ratios)}")
 
-        ratios = get_ratios({"a": net_ct.policy_weights.clone().detach()}, {"a": initial_stored_weights})
-        logger.info(f"Stored Policy parameters changed on average by a factor of {get_clean_median_ratio(ratios)}")
-        
-        ratios = get_ratios(trainer.net_container.debiasing_model.state_dict(), initial_debias_weights)
-        logger.info(f"Debias parameters changed on average by a factor of {get_clean_median_ratio(ratios)}")
+            ratios = get_ratios({"a": net_ct.policy_weights.clone().detach()}, {"a": initial_stored_weights})
+            logger.info(f"Stored Policy parameters changed on average by a factor of {get_clean_median_ratio(ratios)}")
+            
+            ratios = get_ratios(trainer.net_container.debiasing_model.state_dict(), initial_debias_weights)
+            logger.info(f"Debias parameters changed on average by a factor of {get_clean_median_ratio(ratios)}")
 
-        timer.finish_timing()
-        timer.print_updating()
+            timer.finish_timing()
+            timer.print_updating()
 
     # load the best model
     trainer.net_container.load_state_dict(torch.load(early_stopping.model_address))
@@ -298,9 +305,10 @@ def main_sweep():
     args.learning_rate = config.learning_rate
     args.epochs = config.epochs
     args.hdim = config.hdim
-    args.embedding_dim = config.embedding_dim
-    args.fourier_scale = config.fourier_scale
-    args.hyper_ratio = config.hyper_ratio
+    if args.rl_variant == "hypernet":
+        args.embedding_dim = config.embedding_dim
+        args.fourier_scale = config.fourier_scale
+        args.hyper_ratio = config.hyper_ratio
     args.early_stopping_patience = config.early_stopping_patience
     args.warmup_epochs = config.get("warmup_epochs", 0)
     args.epsilon = config.get("epsilon", 0)
@@ -321,15 +329,7 @@ def main_sweep():
     # from IPython import embed; embed(); exit()
     net_container.to(DEVICE)
 
-    optimizer = optim.AdamW(
-        [{"params": net_container.hyper.parameters(),
-          "lr": 0.1,},
-         {"params": [net_container.policy_weights],
-          "lr": args.learning_rate,},
-         {"params": net_container.debiasing_model.parameters(),
-          "lr": args.learning_rate,}],
-        lr=args.learning_rate,
-    )
+    optimizer = trainer_type.make_optimizer(net_container, args.learning_rate)
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_dataloader))
     # scheduler = optim.lr_scheduler.SequentialLR(optimizer, [scheduler1, scheduler2])
@@ -349,6 +349,7 @@ def main_sweep():
 
     net_container = train(
         trainer=trainer,
+        variant=args.rl_variant,
         optimizer=optimizer,
         scheduler=scheduler,
         early_stopping=early_stopping,

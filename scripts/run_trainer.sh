@@ -27,7 +27,6 @@ random_seed=0
 
 rl_task_model="vanilla"
 sample_algorithm="without_replacement"
-prefix="loss_pareto_hypernet" # TODO: Include baseline as well "loss"
 rl_model="policy_only"
 search_algorithm="epsilon_greedy"
 reg_alg="sum"
@@ -41,6 +40,10 @@ for target_label in "${target_labels[@]}"; do
     for embedding_model in "${embedding_models[@]}"; do
       for baseline_type in "${baseline_types[@]}"; do
         for rl_variant in "${rl_variants[@]}"; do
+          prefix="loss"
+          if [ $rl_variant = "hypernet" ]; then
+            prefix="loss_pareto_hypernet"
+          fi
           gpu=${gpus[$target_label_index]}
           echo "$baseline_type $rl_variant $target_label, bag_size_$bag_size, $embedding_model, gpu_$gpu ($current_run/$total_runs)"
 

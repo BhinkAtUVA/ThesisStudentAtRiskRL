@@ -11,10 +11,15 @@ from src.models.rl import get_loss_fn, sample_action, select_from_action
 
 from abc import ABC, abstractmethod
 
+from src.util.timing import TimingAnalyzer
+
 # ABC for any trainer class defining the API for interacting with the training process and model instantiation
 class Trainer(ABC):
     @abstractmethod
     def get_model_constructor() -> type[NetworkContainer]:
+        pass
+    @abstractmethod
+    def make_optimizer(model: NetworkContainer, learning_rate: float) -> optim.Optimizer:
         pass
     @abstractmethod
     def select_from_dataloader(self, dataloader, bag_size, random=False) -> list:
@@ -64,6 +69,12 @@ class  RLMILTrainer(Trainer):
 
     def get_model_constructor():
         return RLMILBase
+    
+    def make_optimizer(net_container: RLMILBase, learning_rate):
+        return optim.AdamW(
+            net_container.policy.parameters(),
+            lr=learning_rate,
+        )
         
     def select_from_dataloader(self, dataloader, bag_size, random=False):
         with torch.no_grad():
@@ -207,7 +218,8 @@ class  RLMILTrainer(Trainer):
         only_ensemble, 
         epsilon,
         reg_coef, 
-        sample_algorithm
+        sample_algorithm,
+        timer: TimingAnalyzer
     ):
         # Get one selection of eval data for computing reward
         self.net_container.policy.eval()

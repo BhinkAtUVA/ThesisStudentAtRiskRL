@@ -168,7 +168,7 @@ class TimingAnalyzer():
         cnode = self.current_node.insert_or_get_child(name)
         self.current_node = cnode
         yield
-        self.up()
+        if len(self.current_node.children) > 0: self.up()
 
     def finish_timing(self):
         while len(self.start_times) > 0:
