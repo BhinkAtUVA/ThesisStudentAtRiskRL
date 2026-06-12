@@ -11,9 +11,9 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from src.configs import parse_args
 from src.logger import get_logger
-from src.models.full import HypernetRLMIL
+from src.models.full import HypernetRLMIL, NetworkContainer
 from src.results.metrics import load_rl_model
-from src.trainers.base import Trainer
+from src.trainers.base import RLMILTrainer, Trainer
 from src.trainers.hypernet import HypernetRLMILTrainer
 from src.trainers.util import create_net_container, get_dataloaders, get_model, load_mil_model_from_config, prepare_data
 from src.util.timing import TimingAnalyzer
@@ -314,9 +314,10 @@ def main_sweep():
         get_dataloaders(args, train_dataset, eval_dataset, test_dataset, logger)
     logger.info(f"SWEEP DEBUG: Recreated dataloaders with batch_size = {args.batch_size}")
 
+    trainer_type: type[Trainer] = HypernetRLMIL if args.rl_variant == "hypernet" else RLMILTrainer
 
     # Model Optimizer Scheduler EarlyStopping
-    net_container: HypernetRLMIL = create_net_container(args, run_dir, HypernetRLMILTrainer.get_model_constructor(), logger) # TODO: Make parameter for trainer
+    net_container: NetworkContainer = create_net_container(args, run_dir, trainer_type.get_model_constructor(), logger) # TODO: Make parameter for trainer
     # from IPython import embed; embed(); exit()
     net_container.to(DEVICE)
 
@@ -336,7 +337,7 @@ def main_sweep():
                                    trace_func=logger.info,
                                    patience=args.early_stopping_patience, verbose=True, descending=False)
     
-    trainer = HypernetRLMILTrainer(
+    trainer = trainer_type(
         net_container = net_container,
         learning_rate = args.learning_rate,
         device = DEVICE,

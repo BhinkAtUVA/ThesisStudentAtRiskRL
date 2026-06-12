@@ -13,6 +13,7 @@ cd ~/StudiumDS/Sem2/Thesis/ThesisStudentAtRiskRL # ROOT OF YOUR PROJECT
 source venv/bin/activate
 
 baseline_types=("MeanMLP") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
+rl_variants=("baseline") # "baseline" "hypernet"
 target_labels=("label")
 gpus=(0)
 wandb_entity="BhinkAtUVA"
@@ -32,18 +33,20 @@ search_algorithm="epsilon_greedy"
 reg_alg="sum"
 
 repeats=1
-total_runs=$((${#baseline_types[@]} * ${#target_labels[@]} * ${#bag_sizes[@]} * ${#embedding_models[@]} * $repeats))
+total_runs=$((${#baseline_types[@]} * ${#rl_variants[@]} * ${#target_labels[@]} * ${#bag_sizes[@]} * ${#embedding_models[@]} * $repeats))
 current_run=1
 
 for target_label in "${target_labels[@]}"; do
   for bag_size in "${bag_sizes[@]}"; do
     for embedding_model in "${embedding_models[@]}"; do
       for baseline_type in "${baseline_types[@]}"; do
-        gpu=${gpus[$target_label_index]}
-        echo "$baseline_type $target_label, bag_size_$bag_size, $embedding_model, gpu_$gpu ($current_run/$total_runs)"
+        for rl_variant in "${rl_variants[@]}"; do
+          gpu=${gpus[$target_label_index]}
+          echo "$baseline_type $rl_variant $target_label, bag_size_$bag_size, $embedding_model, gpu_$gpu ($current_run/$total_runs)"
 
-        for i in $(seq 1 $repeats); do # Loop for continued training
+          for i in $(seq 1 $repeats); do # Loop for continued training
             CUDA_VISIBLE_DEVICES=$gpu python -m src.run_trainer --rl --baseline $baseline_type \
+                                                --rl_variant $rl_variant \
                                                 --label $target_label \
                                                 --data_embedded_column_name $data_embedded_column_name \
                                                 --prefix $prefix \
@@ -62,8 +65,8 @@ for target_label in "${target_labels[@]}"; do
                                                 --reg_alg $reg_alg \
                                                 --run_sweep ;
             ((current_run++))
+          done
         done
-
       done
     done
   done

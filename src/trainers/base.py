@@ -17,6 +17,27 @@ class Trainer(ABC):
     def get_model_constructor() -> type[NetworkContainer]:
         pass
     @abstractmethod
+    def select_from_dataloader(self, dataloader, bag_size, random=False) -> list:
+        pass
+    @abstractmethod
+    def compute_reward(self, eval_data) -> tuple[float, float, torch.Tensor, torch.Tensor]:
+        pass
+    @abstractmethod
+    def compute_metrics_and_details(self, eval_data) -> tuple[dict, list, list, list]:
+        pass
+    @abstractmethod
+    def create_pool_data(self, dataloader, bag_size, pool_size, random=False) -> list:
+        pass
+    @abstractmethod
+    def expected_reward_loss(self, pool_data, average='macro', verbos=False) -> tuple[float, float, float]:
+        pass
+    @abstractmethod
+    def predict_pool(self, pool_data) -> torch.Tensor:
+        pass
+    @abstractmethod
+    def get_first_batch_info(self, eval_dataloader, device, bag_size, sample_algorithm) -> dict:
+        pass
+    @abstractmethod
     def episode(self) -> Tuple[float]:
         pass
 

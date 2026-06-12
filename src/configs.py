@@ -15,6 +15,12 @@ def parse_args():
         choices=["repset", "MaxMLP", "MeanMLP", "AttentionMLP", "random", "majority", "SimpleMLP"],
     )
     parser.add_argument(
+        '--rl_variant',
+        type=str,
+        required=True,
+        choices=["baseline", "hypernet"]
+    )
+    parser.add_argument(
         "--label",
         type=str,
         required=True,
