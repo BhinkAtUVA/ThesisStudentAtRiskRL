@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 from src.configs import parse_args
 from src.logger import get_logger
 from src.models.full import DebiasWarmup
-from src.trainers.util import get_dataloaders, get_model, prepare_data
+from src.trainers.util import create_task_model, get_dataloaders, get_model, prepare_data
 from src.utils import (
     get_model_save_directory,
     get_balanced_weights,
@@ -56,7 +56,7 @@ def train(
         train_loss = np.mean(bias_losses)
 
         eval_loss = compute_loss(warmup, eval_dataloader, device)
-        scheduler.step(eval_loss)
+        scheduler.step()
 
         if not args.no_wandb or args.run_sweep:
             wandb.log(
@@ -155,7 +155,7 @@ def main():
 
     # # Model Optimizer Scheduler EarlyStopping
     warmup = DebiasWarmup(
-        task_model=get_model(run_dir),
+        task_model=create_task_model(args, run_dir, logger, is_rlmil_dir=False),
         hidden_dim=config.hidden_dim,
         device=args.device
     )
@@ -193,7 +193,7 @@ def main():
 
 
 if __name__ == "__main__":
-    BEST_REWARD = float("-inf")
+    BEST_VAL_LOSS = float("inf")
     args = parse_args()
     # Model name and directory
     run_dir = get_model_save_directory(data_embedded_column_name=args.data_embedded_column_name,
@@ -204,7 +204,7 @@ if __name__ == "__main__":
                                        random_seed=args.random_seed,
                                        dev=args.dev, 
                                        task_type=args.task_type, 
-                                       prefix=args.prefix,
+                                       prefix=None,
                                        multiple_runs=args.multiple_runs)
     logger = get_logger(run_dir)
     logger.info(f"{args=}")

@@ -12,7 +12,7 @@
 cd ~/StudiumDS/Sem2/Thesis/ThesisStudentAtRiskRL # ROOT OF YOUR PROJECT
 source venv/bin/activate
 
-baseline_types=("AttentionMLP" "repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
+baseline_types=("MeanMLP") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
 target_labels=("label")
 gpus=(0)
 wandb_entity="BhinkAtUVA"
@@ -38,7 +38,7 @@ for target_label_index in "${!target_labels[@]}"; do
         gpu=${gpus[$target_label_index]}
         echo "$baseline_type, $dataset $target_label, bag_size_$bag_size, $embedding_model, gpu_$gpu ($current_run/$total_runs)"
 
-        CUDA_VISIBLE_DEVICES=$gpu python -m src.run_debias_warmup.py \
+        CUDA_VISIBLE_DEVICES=$gpu python -m src.run_debias_warmup \
                                       --baseline "$baseline_type" \
                                       --label "$target_label" \
                                       --bag_size "$bag_size" \

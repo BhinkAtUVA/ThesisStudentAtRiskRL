@@ -14,7 +14,7 @@ import json
 
 from src.models.full import HypernetRLMIL, NetworkContainer
 from src.models.mil import create_mil_model_with_dict
-from src.trainers.util import get_dataloaders, prepare_data
+from src.trainers.util import create_debiasing_model, get_dataloaders, prepare_data
 
 # Main Configuration
 SEED_TO_ANALYZE = 0
@@ -139,9 +139,10 @@ def load_rl_model(run_dir_path, load_best=True) -> NetworkContainer:
 
     task_model = create_mil_model_with_dict(mil_config)
     task_model.load_state_dict(torch.load(mil_weights_path, map_location=device))
+    debiasing_model = create_debiasing_model(Namespace(**mil_config), run_dir_path, Logger("Discard"))
     
     net_container = HypernetRLMIL(
-        task_model=task_model, state_dim=rl_config['state_dim'], hdim=rl_config['hdim'], hidden_dim=mil_config["hidden_dim"],
+        task_model=task_model, debiasing_model=debiasing_model, state_dim=rl_config['state_dim'], hdim=rl_config['hdim'], hidden_dim=mil_config["hidden_dim"],
         learning_rate=rl_config['learning_rate'], device=device, task_type=rl_config['task_type'],
         min_clip=rl_config.get('min_clip'), max_clip=rl_config.get('max_clip'),
         sample_algorithm=rl_config.get('sample_algorithm'), no_autoencoder=rl_config.get('no_autoencoder_for_rl', False)

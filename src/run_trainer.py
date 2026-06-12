@@ -295,8 +295,6 @@ def main_sweep():
     )
     config = wandb.config
 
-    args.critic_learning_rate = config.critic_learning_rate
-    args.actor_learning_rate = config.actor_learning_rate
     args.learning_rate = config.learning_rate
     args.epochs = config.epochs
     args.hdim = config.hdim

@@ -117,7 +117,6 @@ class RLMILBase(NetworkContainer):
 
 class DebiasWarmup():
     def __init__(self, **kwargs):
-        super(HypernetRLMIL, self).__init__()
         self.hidden_dim = kwargs["hidden_dim"]
         if self.hidden_dim is None:
             self.hidden_dim = 32
@@ -188,7 +187,7 @@ class HypernetRLMIL(NetworkContainer):
         self.rewards = []
         self.preferences = []
         
-        self.debiasing_model = AdversarialMLP(self.hidden_dim, self.hidden_dim // 4, 4)
+        self.debiasing_model: AdversarialMLP = kwargs["debiasing_model"]
         self.task_model.mlp[-2].register_forward_hook(self._peek_task_last_hidden)
 
         self.bias_loss_fn = torch.nn.MSELoss()
