@@ -31,7 +31,7 @@ rl_model="policy_only"
 search_algorithm="epsilon_greedy"
 reg_alg="sum"
 
-repeats=10
+repeats=1
 total_runs=$((${#baseline_types[@]} * ${#target_labels[@]} * ${#bag_sizes[@]} * ${#embedding_models[@]} * $repeats))
 current_run=1
 

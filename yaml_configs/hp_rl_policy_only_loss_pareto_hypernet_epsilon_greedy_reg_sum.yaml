@@ -37,4 +37,4 @@ parameters:
     distribution: log_uniform_values
     min: 0.005
     max: 0.2
-run_cap: 50
+run_cap: 25

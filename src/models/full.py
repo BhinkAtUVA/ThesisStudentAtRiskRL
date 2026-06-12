@@ -115,6 +115,54 @@ class RLMILBase(NetworkContainer):
     def load_state_dict(self, state_dict):
         self.policy.load_state_dict(state_dict)
 
+class DebiasWarmup():
+    def __init__(self, **kwargs):
+        super(HypernetRLMIL, self).__init__()
+        self.hidden_dim = kwargs["hidden_dim"]
+        if self.hidden_dim is None:
+            self.hidden_dim = 32
+
+        self.task_model: BaseMLP = kwargs['task_model']
+        self.no_autoencoder = kwargs.get('no_autoencoder', False)
+        
+        self.debiasing_model = AdversarialMLP(self.hidden_dim, self.hidden_dim // 4, 4)
+        self.task_model.mlp[-2].register_forward_hook(self._peek_task_last_hidden)
+
+        self.bias_loss_fn = torch.nn.MSELoss()
+
+        if kwargs["device"] is not None:
+            self.to(kwargs["device"])
+    
+    def _peek_task_last_hidden(self, module, input, output):
+        self.batch_hidden = output.detach()
+    
+    def predict(self, batch_x, batch_y):
+        self.task_model.eval()
+        batch_out = self.task_model(batch_x)
+        batch_bias_pred = self.debiasing_model(self.batch_hidden)
+        batch_bias_loss = self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values)
+        return batch_out, batch_bias_loss.item()
+    
+    def predict_train(self, task_optim, batch_x, batch_y):
+        self.task_model.train()
+        self.task_model(batch_x)
+        batch_bias_pred = self.debiasing_model(self.batch_hidden)
+        batch_bias_loss = self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) # Indices of protected features, maximum is valid because instances of protected features are sparse; 42 is a typical value for untrained distances
+        task_optim.zero_grad()
+        batch_bias_loss.backward()
+        task_optim.step()
+        return batch_bias_loss.item()
+
+    def to(self, device):
+        self.task_model = self.task_model.to(device)
+        self.debiasing_model = self.debiasing_model.to(device)
+
+    def state_dict(self):
+        return self.debiasing_model.state_dict()
+    
+    def load_state_dict(self, state_dict):
+        self.debiasing_model.load_state_dict(state_dict)
+
 class HypernetRLMIL(NetworkContainer):
     def __init__(self, **kwargs):
         super(HypernetRLMIL, self).__init__()

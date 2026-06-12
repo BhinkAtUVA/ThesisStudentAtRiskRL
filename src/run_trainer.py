@@ -21,7 +21,8 @@ from src.utils import (
     get_model_save_directory,
     get_balanced_weights,
     EarlyStopping,
-    load_json, save_json
+    load_json, save_json,
+    set_seed
 )
 
 import copy
@@ -500,6 +501,8 @@ if __name__ == "__main__":
 
     DEVICE = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     logger.info(f"DEVICE={DEVICE}")
+
+    set_seed(args.random_seed)
 
     model_name = args.baseline
     args.model_name = model_name
