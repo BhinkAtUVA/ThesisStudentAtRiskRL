@@ -322,7 +322,7 @@ def main_sweep():
         get_dataloaders(args, train_dataset, eval_dataset, test_dataset, logger)
     logger.info(f"SWEEP DEBUG: Recreated dataloaders with batch_size = {args.batch_size}")
 
-    trainer_type: type[Trainer] = HypernetRLMIL if args.rl_variant == "hypernet" else RLMILTrainer
+    trainer_type: type[Trainer] = HypernetRLMILTrainer if args.rl_variant == "hypernet" else RLMILTrainer
 
     # Model Optimizer Scheduler EarlyStopping
     net_container: NetworkContainer = create_net_container(args, run_dir, trainer_type.get_model_constructor(), logger) # TODO: Make parameter for trainer

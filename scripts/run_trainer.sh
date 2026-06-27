@@ -12,8 +12,8 @@
 cd ~/StudiumDS/Sem2/Thesis/ThesisStudentAtRiskRL # ROOT OF YOUR PROJECT
 source venv/bin/activate
 
-baseline_types=("MeanMLP") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
-rl_variants=("baseline") # "baseline" "hypernet"
+baseline_types=("MaxMLP" "AttentionMLP" "repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
+rl_variants=("hypernet") # "baseline" "hypernet"
 target_labels=("label")
 gpus=(0)
 wandb_entity="BhinkAtUVA"
@@ -33,7 +33,7 @@ reg_alg="sum"
 
 repeats=1
 total_runs=$((${#baseline_types[@]} * ${#rl_variants[@]} * ${#target_labels[@]} * ${#bag_sizes[@]} * ${#embedding_models[@]} * $repeats))
-current_run=1
+current_run=1W
 
 for target_label in "${target_labels[@]}"; do
   for bag_size in "${bag_sizes[@]}"; do

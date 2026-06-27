@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from src.RLMIL_Datasets import RLMILDataset
 from src.models.adversary import AdversarialMLP
-from src.models.full import NetworkContainer
+from src.models.full import HypernetRLMIL, NetworkContainer
 from src.models.mil import create_mil_model_with_dict
 from src.trainers.base import Trainer
 from src.utils import (
@@ -106,7 +106,7 @@ def create_task_model(args, mil_best_model_dir, logger, is_rlmil_dir=True):
 
 def create_debiasing_model(args, mil_best_model_dir, logger):
     state_dict = torch.load(os.path.join(mil_best_model_dir, "..", "best_debiaser.pt"))
-    model = AdversarialMLP(args.hidden_dim, args.hidden_dim // 4, 4)
+    model = AdversarialMLP(args.hidden_dim, args.hidden_dim // 4, [2, 11, 3, 5])
     model.load_state_dict(state_dict)
     return model
 
@@ -127,7 +127,7 @@ def create_net_container(args, mil_best_model_dir, constructor: type[NetworkCont
     task_model = load_mil_model_from_config(os.path.join(mil_best_model_dir, "..", "best_model_config.json"),
                                             state_dict)
     mil_config = load_json(os.path.join(mil_best_model_dir, "..", "best_model_config.json"))
-    debiasing_model = create_debiasing_model(Namespace(**mil_config), mil_best_model_dir, logger)
+    debiasing_model = create_debiasing_model(Namespace(**mil_config), mil_best_model_dir, logger) if args.rl_variant == "hypernet" else None
     net_container: NetworkContainer = constructor(
         task_model=task_model,
         debiasing_model=debiasing_model,

@@ -12,7 +12,7 @@
 cd ~/StudiumDS/Sem2/Thesis/ThesisStudentAtRiskRL # ROOT OF YOUR PROJECT
 source venv/bin/activate
 
-baseline_types=("MeanMLP") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
+baseline_types=("MaxMLP" "AttentionMLP" "repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
 target_labels=("label")
 gpus=(0)
 wandb_entity="BhinkAtUVA"

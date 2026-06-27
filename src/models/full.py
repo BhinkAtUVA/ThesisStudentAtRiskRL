@@ -124,10 +124,10 @@ class DebiasWarmup():
         self.task_model: BaseMLP = kwargs['task_model']
         self.no_autoencoder = kwargs.get('no_autoencoder', False)
         
-        self.debiasing_model = AdversarialMLP(self.hidden_dim, self.hidden_dim // 4, 4)
+        self.debiasing_model = AdversarialMLP(self.hidden_dim, self.hidden_dim // 4, [2, 11, 3, 5]) # Number of levels for gender, socioeconomic status, age and education
         self.task_model.mlp[-2].register_forward_hook(self._peek_task_last_hidden)
 
-        self.bias_loss_fn = torch.nn.MSELoss()
+        self.bias_loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
 
         if kwargs["device"] is not None:
             self.to(kwargs["device"])
@@ -135,18 +135,20 @@ class DebiasWarmup():
     def _peek_task_last_hidden(self, module, input, output):
         self.batch_hidden = output.detach()
     
-    def predict(self, batch_x, batch_y):
+    def predict(self, batch_x, batch_y, protected_labels):
         self.task_model.eval()
         batch_out = self.task_model(batch_x)
         batch_bias_pred = self.debiasing_model(self.batch_hidden)
-        batch_bias_loss = self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values)
+        batch_bias_losses = torch.stack([self.bias_loss_fn(pred, target) for pred, target in zip(batch_bias_pred, protected_labels.unbind(dim=-1))])
+        batch_bias_loss = batch_bias_losses.mean()
         return batch_out, batch_bias_loss.item()
     
-    def predict_train(self, task_optim, batch_x, batch_y):
+    def predict_train(self, task_optim, batch_x, batch_y, protected_labels):
         self.task_model.train()
         self.task_model(batch_x)
         batch_bias_pred = self.debiasing_model(self.batch_hidden)
-        batch_bias_loss = self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) # Indices of protected features, maximum is valid because instances of protected features are sparse; 42 is a typical value for untrained distances
+        batch_bias_losses = torch.stack([self.bias_loss_fn(pred, target) for pred, target in zip(batch_bias_pred, protected_labels.unbind(dim=-1))])
+        batch_bias_loss = batch_bias_losses.mean()
         task_optim.zero_grad()
         batch_bias_loss.backward()
         task_optim.step()
@@ -190,8 +192,7 @@ class HypernetRLMIL(NetworkContainer):
         self.debiasing_model: AdversarialMLP = kwargs["debiasing_model"]
         self.task_model.mlp[-2].register_forward_hook(self._peek_task_last_hidden)
 
-        self.bias_loss_fn = torch.nn.MSELoss()
-        self.bias_loss_normalizer = torch.nn.Sigmoid()
+        self.bias_loss_fn = torch.nn.CrossEntropyLoss(reduction="none")
 
         if kwargs["device"] is not None:
             self.to(kwargs["device"])
@@ -217,20 +218,22 @@ class HypernetRLMIL(NetworkContainer):
 
         return action_probs, batch_rep, exp_reward
     
-    def predict(self, loss_fn, batch_x, batch_y):
+    def predict(self, loss_fn, batch_x, batch_y, protected_labels):
         self.task_model.eval()
         batch_out = self.task_model(batch_x)
         batch_loss = loss_fn(batch_out.squeeze(), batch_y.squeeze())
         batch_bias_pred = self.debiasing_model(self.batch_hidden)
-        batch_bias_loss = self.bias_loss_normalizer(self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) / 42)
+        batch_bias_losses = torch.stack([self.bias_loss_fn(pred, target) for pred, target in zip(batch_bias_pred, protected_labels.unbind(dim=-1))])
+        batch_bias_loss = batch_bias_losses.mean()
         return batch_out, batch_loss.item(), batch_bias_loss.item()
     
-    def predict_train(self, loss_fn, task_optim, batch_x, batch_y):
+    def predict_train(self, loss_fn, task_optim, batch_x, batch_y, protected_labels):
         self.task_model.train()
         batch_out = self.task_model(batch_x)
         batch_loss = loss_fn(batch_out.squeeze(), batch_y.squeeze())
         batch_bias_pred = self.debiasing_model(self.batch_hidden)
-        batch_bias_loss = self.bias_loss_normalizer(self.bias_loss_fn(batch_bias_pred.squeeze(), torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values) / 42) # Indices of protected features, maximum is valid because instances of protected features are sparse; 42 is a typical value for untrained distances
+        batch_bias_losses = torch.stack([self.bias_loss_fn(pred, target) for pred, target in zip(batch_bias_pred, protected_labels.unbind(dim=-1))])
+        batch_bias_loss = batch_bias_losses.mean()
         task_optim.zero_grad()
         batch_loss.backward()
         batch_bias_loss.backward()

@@ -143,6 +143,7 @@ def load_rl_model(run_dir_path, load_best=True) -> NetworkContainer:
     
     net_container = HypernetRLMIL(
         task_model=task_model, debiasing_model=debiasing_model, state_dim=rl_config['state_dim'], hdim=rl_config['hdim'], hidden_dim=mil_config["hidden_dim"],
+        embedding_dim=rl_config["embedding_dim"], fourier_scale=rl_config["fourier_scale"], hyper_ratio=rl_config["hyper_ratio"],
         learning_rate=rl_config['learning_rate'], device=device, task_type=rl_config['task_type'],
         min_clip=rl_config.get('min_clip'), max_clip=rl_config.get('max_clip'),
         sample_algorithm=rl_config.get('sample_algorithm'), no_autoencoder=rl_config.get('no_autoencoder_for_rl', False)

@@ -17,7 +17,6 @@ def parse_args():
     parser.add_argument(
         '--rl_variant',
         type=str,
-        required=True,
         choices=["baseline", "hypernet"]
     )
     parser.add_argument(

@@ -42,14 +42,27 @@ class HypernetRLMILTrainer(RLMILTrainer):
             "lr": learning_rate,}],
             lr=learning_rate,
         )
+        
+    def select_from_dataloader(self, dataloader, bag_size, random=False):
+        with torch.no_grad():
+            data = []
+            for batch_x, batch_y, indices, instance_labels in dataloader:
+                batch_x = batch_x.to(self.device)
+                # select batch_x
+                action_probs, _, _ = self.net_container.action(batch_x)
+                action, _ = sample_action(action_probs, bag_size, self.device, random=random, algorithm=self.sample_algorithm)
+                true_indices = (torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values - 1).to(dtype=torch.int64)
+                batch_x = select_from_action(action, batch_x)
+                batch_x = batch_x.cpu()
+                data.append((batch_x, batch_y, indices, instance_labels, true_indices))
+        return data
     
     def compute_reward(self, eval_data, preference):
         with torch.no_grad():
             data_ys, pred_ys, losses, prob_ys, hyper_rewards = [], [], [], [], []
-            for batch_x, batch_y, _, _ in eval_data:
+            for batch_x, batch_y, _, _, true_indices in eval_data:
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_out, loss, bias_loss = self.net_container.predict(self.loss_fn, batch_x, batch_y)
-
+                pred_out, loss, bias_loss = self.net_container.predict(self.loss_fn, batch_x, batch_y, true_indices)
                 hyper_rewards.append(preference * bias_loss - (1 - preference) * loss)
 
                 if self.task_type == 'regression':
@@ -126,7 +139,8 @@ class HypernetRLMILTrainer(RLMILTrainer):
                                                     algorithm=sample_algorithm)
             sel_x = select_from_action(action, batch_x)
             sel_y = batch_y
-            sel_loss, bias_loss = self.net_container.predict_train(self.loss_fn, self.task_optim, sel_x, sel_y)
+            true_indices = (torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values - 1).to(dtype=torch.int64)
+            sel_loss, bias_loss = self.net_container.predict_train(self.loss_fn, self.task_optim, sel_x, sel_y, true_indices)
             sel_losses.append(sel_loss)
             bias_losses.append(bias_loss)
             self.net_container.policy.eval()

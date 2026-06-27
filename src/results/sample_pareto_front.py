@@ -20,7 +20,7 @@ for model_name, model_config in DATASET_CONFIGS['models'].items():
     if not model_config["is_hypernet"]: continue
 
     model_dir = os.path.join(DATASET_CONFIGS['base_path'], model_config['model_to_explain_suffix'])
-    net_container: HypernetRLMIL = load_rl_model(model_dir, load_best=False) # Assumes load_rl_model is defined
+    net_container: HypernetRLMIL = load_rl_model(model_dir, load_best=True) # Assumes load_rl_model is defined
     net_container.to(device)
     
     with open(os.path.join(model_dir, "sweep_best_model_config.json"), "r") as f: rl_config = json.load(f)
@@ -48,7 +48,8 @@ for model_name, model_config in DATASET_CONFIGS['models'].items():
                 action_probs, batch_rep, exp_reward = net_container.action(batch_x_embeddings.to(device))
                 action, action_log_prob = sample_action_without_replacement(action_probs, 20, device)
                 selected_bag = select_from_action(action, batch_x_embeddings.to(device))
-                _, sel_loss, bias_loss = net_container.predict(loss_fn, selected_bag.to(device), batch_y_bag_labels.to(device))
+                true_indices = (torch.max(batch_x_embeddings[:, (2, 4, 5, 7), :], dim=-1).values - 1).to(dtype=torch.int64, device=device)
+                _, sel_loss, bias_loss = net_container.predict(loss_fn, selected_bag.to(device), batch_y_bag_labels.to(device), true_indices)
                 sel_losses.append(sel_loss)
                 bias_losses.append(bias_loss)
             losses_by_preference.append({

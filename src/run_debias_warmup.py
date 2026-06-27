@@ -25,7 +25,8 @@ def compute_loss(warmup: DebiasWarmup, dataloader, device):
         bias_losses = []
         for batch_x, batch_y, _, _ in dataloader:
             batch_x, batch_y = batch_x.to(device), batch_y.to(device)
-            _, bias_loss = warmup.predict(batch_x, batch_y)
+            true_indices = (torch.max(batch_x[:, (2, 4, 5, 7), :], dim=-1).values - 1).to(dtype=torch.int64)
+            _, bias_loss = warmup.predict(batch_x, batch_y, true_indices)
             bias_losses.append(bias_loss)
     return np.mean(bias_losses)
 
@@ -50,7 +51,8 @@ def train(
             x = x.to(device)
             y = y.to(device)
 
-            bias_loss = warmup.predict_train(optimizer, x, y)
+            true_indices = (torch.max(x[:, (2, 4, 5, 7), :], dim=-1).values - 1).to(dtype=torch.int64)
+            bias_loss = warmup.predict_train(optimizer, x, y, true_indices)
             bias_losses.append(bias_loss)
 
         train_loss = np.mean(bias_losses)
