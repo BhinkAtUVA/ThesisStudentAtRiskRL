@@ -8,7 +8,7 @@ import pandas as pd
 import torch
 from torch import nn
 
-from src.models.full import HypernetRLMIL
+from src.models.full import HypernetRL
 from src.models.rl import sample_action_without_replacement, select_from_action
 from src.results.metrics import DATASET_CONFIGS, POOLING_METHOD_TO_ANALYZE, SEED_TO_ANALYZE, load_rl_model
 from src.trainers.util import get_dataloaders, prepare_data
@@ -20,7 +20,7 @@ for model_name, model_config in DATASET_CONFIGS['models'].items():
     if not model_config["is_hypernet"]: continue
 
     model_dir = os.path.join(DATASET_CONFIGS['base_path'], model_config['model_to_explain_suffix'])
-    net_container: HypernetRLMIL = load_rl_model(model_dir, load_best=True) # Assumes load_rl_model is defined
+    net_container: HypernetRL = load_rl_model(model_dir, load_best=True) # Assumes load_rl_model is defined
     net_container.to(device)
     
     with open(os.path.join(model_dir, "sweep_best_model_config.json"), "r") as f: rl_config = json.load(f)
