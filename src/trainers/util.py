@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from src.RLMIL_Datasets import RLMILDataset
 from src.models.adversary import AdversarialMLP
-from src.models.full import HypernetRLMIL, NetworkContainer
+from src.models.full import HypernetRL, NetworkContainer
 from src.models.mil import create_mil_model_with_dict
 from src.trainers.base import Trainer
 from src.utils import (

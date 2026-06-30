@@ -11,10 +11,10 @@ from torch.utils.data import DataLoader, WeightedRandomSampler
 
 from src.configs import parse_args
 from src.logger import get_logger
-from src.models.full import HypernetRLMIL, NetworkContainer
+from src.models.full import HypernetRL, NetworkContainer
 from src.results.metrics import load_rl_model
 from src.trainers.base import RLMILTrainer, Trainer
-from src.trainers.hypernet import HypernetRLMILTrainer
+from src.trainers.hypernet import HypernetRLMILTrainer, HypernetRLTrainer
 from src.trainers.util import create_net_container, get_dataloaders, get_model, load_mil_model_from_config, prepare_data
 from src.util.timing import TimingAnalyzer
 from src.utils import (
@@ -82,7 +82,7 @@ def train(
     # logger.info(f"Training model started ....")
 
     if variant == "hypernet":
-        net_ct: HypernetRLMIL = trainer.net_container
+        net_ct: HypernetRL = trainer.net_container
         initial_hyper_weights = copy.deepcopy(net_ct.hyper.state_dict())
         initial_stored_weights = net_ct.policy_weights.clone().detach()
         initial_debias_weights = copy.deepcopy(net_ct.debiasing_model.state_dict())
@@ -322,7 +322,14 @@ def main_sweep():
         get_dataloaders(args, train_dataset, eval_dataset, test_dataset, logger)
     logger.info(f"SWEEP DEBUG: Recreated dataloaders with batch_size = {args.batch_size}")
 
-    trainer_type: type[Trainer] = HypernetRLMILTrainer if args.rl_variant == "hypernet" else RLMILTrainer
+    match args.rl_variant:
+        case "hypernet_rl":
+            trainer_type: type[Trainer] = HypernetRLTrainer
+        case "hypernet_rlmil":
+            trainer_type: type[Trainer] = HypernetRLMILTrainer
+        case "baseline":
+            trainer_type: type[Trainer] = RLMILTrainer
+        case _: ValueError("Invalid trainer variant")
 
     # Model Optimizer Scheduler EarlyStopping
     net_container: NetworkContainer = create_net_container(args, run_dir, trainer_type.get_model_constructor(), logger) # TODO: Make parameter for trainer
@@ -440,7 +447,7 @@ def main():
                                    trace_func=logger.info, patience=args.early_stopping_patience, verbose=True,
                                    descending=False)
     
-    trainer = HypernetRLMILTrainer(
+    trainer = HypernetRLTrainer(
         net_container = net_container,
         learning_rate = args.learning_rate,
         device = DEVICE,

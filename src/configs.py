@@ -17,7 +17,7 @@ def parse_args():
     parser.add_argument(
         '--rl_variant',
         type=str,
-        choices=["baseline", "hypernet"]
+        choices=["baseline", "hypernet_rl", "hypernet_rlmil"]
     )
     parser.add_argument(
         "--label",

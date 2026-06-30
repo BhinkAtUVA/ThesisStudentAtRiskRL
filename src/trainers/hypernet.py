@@ -3,14 +3,14 @@ from sklearn.metrics import f1_score, r2_score
 import torch
 from torch import optim
 
-from src.models.full import HypernetRLMIL
+from src.models.full import HypernetRL, HypernetRLMIL
 from src.models.rl import sample_action, select_from_action
 from src.trainers.base import RLMILTrainer
 from src.util.timing import TimingAnalyzer
 
-class HypernetRLMILTrainer(RLMILTrainer):
-    def __init__(self, net_container: HypernetRLMIL, **kwargs):
-        super(HypernetRLMILTrainer, self).__init__(
+class HypernetRLTrainer(RLMILTrainer):
+    def __init__(self, net_container: HypernetRL, **kwargs):
+        super(HypernetRLTrainer, self).__init__(
             net_container=net_container,
             learning_rate=kwargs['learning_rate'],
             device=kwargs['device'],
@@ -30,12 +30,12 @@ class HypernetRLMILTrainer(RLMILTrainer):
         self.net_container = net_container
 
     def get_model_constructor():
-        return HypernetRLMIL
+        return HypernetRL
     
-    def make_optimizer(net_container: HypernetRLMIL, learning_rate):
+    def make_optimizer(net_container: HypernetRL, learning_rate):
         return optim.AdamW(
             [{"params": net_container.hyper.parameters(),
-            "lr": 0.1,},
+            "lr": learning_rate,},
             {"params": [net_container.policy_weights],
             "lr": learning_rate,},
             {"params": net_container.debiasing_model.parameters(),
@@ -183,3 +183,7 @@ class HypernetRLMILTrainer(RLMILTrainer):
 
         return total_loss.item(), policy_loss.item(), 0, \
             np.mean(sel_losses), reg_coef * regularization_loss.item(), bias_loss, preference.item()
+    
+class HypernetRLMILTrainer(HypernetRLTrainer):
+    def get_model_constructor():
+        return HypernetRLMIL

@@ -12,7 +12,7 @@ from scipy.stats import spearmanr
 import shap
 import json
 
-from src.models.full import HypernetRLMIL, NetworkContainer
+from src.models.full import HypernetRL, NetworkContainer
 from src.models.mil import create_mil_model_with_dict
 from src.trainers.util import create_debiasing_model, get_dataloaders, prepare_data
 
@@ -141,7 +141,7 @@ def load_rl_model(run_dir_path, load_best=True) -> NetworkContainer:
     task_model.load_state_dict(torch.load(mil_weights_path, map_location=device))
     debiasing_model = create_debiasing_model(Namespace(**mil_config), run_dir_path, Logger("Discard"))
     
-    net_container = HypernetRLMIL(
+    net_container = HypernetRL(
         task_model=task_model, debiasing_model=debiasing_model, state_dim=rl_config['state_dim'], hdim=rl_config['hdim'], hidden_dim=mil_config["hidden_dim"],
         embedding_dim=rl_config["embedding_dim"], fourier_scale=rl_config["fourier_scale"], hyper_ratio=rl_config["hyper_ratio"],
         learning_rate=rl_config['learning_rate'], device=device, task_type=rl_config['task_type'],
@@ -288,7 +288,7 @@ if __name__ == "__main__":
                         shap_output_file = os.path.join(DATASET_CONFIGS['output_dir'], shap_filename)
                         if os.path.exists(shap_output_file): continue
 
-                        net_container: HypernetRLMIL = net_container
+                        net_container: HypernetRL = net_container
                         net_container.set_preference(torch.fill(torch.zeros((1)), preference).to(torch.device("cuda:0")))
 
                         shap_values = explainer.shap_values(instance_features)
