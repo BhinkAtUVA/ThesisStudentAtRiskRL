@@ -12,8 +12,8 @@
 cd ~/StudiumDS/Sem2/Thesis/ThesisStudentAtRiskRL # ROOT OF YOUR PROJECT
 source venv/bin/activate
 
-baseline_types=("MaxMLP" "AttentionMLP" "repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
-rl_variants=("hypernet") # "baseline" "hypernet"
+baseline_types=("MeanMLP" "MaxMLP" "AttentionMLP" "repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
+rl_variants=("baseline" "hypernet") # "baseline" "hypernet"
 target_labels=("label")
 gpus=(0)
 wandb_entity="BhinkAtUVA"
@@ -23,7 +23,7 @@ data_embedded_column_name="instances"
 task_type="classification"
 bag_sizes=(20)                                # for all experiments in this project bag_size 20 is used
 embedding_models=("tabular")
-random_seed=0
+random_seed=11
 
 rl_task_model="vanilla"
 sample_algorithm="without_replacement"

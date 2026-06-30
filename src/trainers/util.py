@@ -106,7 +106,8 @@ def create_task_model(args, mil_best_model_dir, logger, is_rlmil_dir=True):
 
 def create_debiasing_model(args, mil_best_model_dir, logger):
     state_dict = torch.load(os.path.join(mil_best_model_dir, "..", "best_debiaser.pt"))
-    model = AdversarialMLP(args.hidden_dim, args.hidden_dim // 4, [2, 11, 3, 5])
+    hidden_dim = args.hidden_dim or 32
+    model = AdversarialMLP(hidden_dim, hidden_dim // 4, [2, 11, 3, 5])
     model.load_state_dict(state_dict)
     return model
 
