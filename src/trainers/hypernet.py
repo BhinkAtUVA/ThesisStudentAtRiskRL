@@ -187,3 +187,16 @@ class HypernetRLTrainer(RLMILTrainer):
 class HypernetRLMILTrainer(HypernetRLTrainer):
     def get_model_constructor():
         return HypernetRLMIL
+    
+    def make_optimizer(net_container: HypernetRLMIL, learning_rate):
+        return optim.AdamW(
+            [{"params": net_container.hyper.parameters(),
+            "lr": learning_rate,},
+            {"params": [net_container.task_weights],
+            "lr": learning_rate,},
+            {"params": [net_container.policy_weights],
+            "lr": learning_rate,},
+            {"params": net_container.debiasing_model.parameters(),
+            "lr": learning_rate,}],
+            lr=learning_rate,
+        )

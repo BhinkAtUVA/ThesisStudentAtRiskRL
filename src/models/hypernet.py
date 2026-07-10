@@ -97,7 +97,10 @@ class FourierHypernetwork(nn.Module):
 # Utility for typing tensors holding the actual parameters belonging to a network controlled by a hypernetwork
 class ParamStorage(torch.Tensor):
     pass
-    
+
+# Calculates the amount of weights for a given MIL task model configuration
+def get_num_weights_task(input_dim: int, hidden_dim: int, output_dim: int):
+    return (input_dim + 1) * hidden_dim + (hidden_dim + 1) * output_dim
 # Calculates the amount of weights for a given PolicyNetwork configuration
 def get_num_weights_policy(state_dim: int, hdim: int):
     return 8514 + 256 * state_dim + hdim * state_dim + hdim + hdim
@@ -125,7 +128,7 @@ def init_policy_storage(state_dim: int, hdim: int) -> ParamStorage:
 def init_task_storage(pretrained_state_dict: dict[str, torch.Tensor]) -> ParamStorage:
     tensors = []
     for _, v in pretrained_state_dict.items():
-        tensors.append(v.reshape(torch.prod(v.shape)))
+        tensors.append(v.reshape(np.prod(v.shape)))
     return torch.cat(tensors).detach()
 
 def pack_weights(hypernet_weights: torch.Tensor, stored_weights: ParamStorage, alpha: float, shapes: OrderedDict[str, tuple[int]]):

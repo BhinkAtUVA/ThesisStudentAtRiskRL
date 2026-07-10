@@ -8,7 +8,8 @@ from src.RLMIL_Datasets import RLMILDataset
 from src.models.adversary import AdversarialMLP
 from src.models.full import HypernetRL, NetworkContainer
 from src.models.mil import create_mil_model_with_dict
-from src.trainers.base import Trainer
+from src.trainers.base import RLMILTrainer, Trainer
+from src.trainers.hypernet import HypernetRLMILTrainer, HypernetRLTrainer
 from src.utils import (
     get_data_directory,
     read_data_split,
@@ -128,16 +129,16 @@ def create_net_container(args, mil_best_model_dir, constructor: type[NetworkCont
     task_model = load_mil_model_from_config(os.path.join(mil_best_model_dir, "..", "best_model_config.json"),
                                             state_dict)
     mil_config = load_json(os.path.join(mil_best_model_dir, "..", "best_model_config.json"))
-    debiasing_model = create_debiasing_model(Namespace(**mil_config), mil_best_model_dir, logger) if args.rl_variant == "hypernet" else None
+    debiasing_model = create_debiasing_model(Namespace(**mil_config), mil_best_model_dir, logger) if is_hypernet_variant(args.rl_variant) else None
     net_container: NetworkContainer = constructor(
         task_model=task_model,
         debiasing_model=debiasing_model,
         state_dim=args.state_dim,
         hdim=args.hdim,
         hidden_dim=mil_config["hidden_dim"],
-        embedding_dim=args.embedding_dim if args.rl_variant == "hypernet" else None,
-        fourier_scale=args.fourier_scale if args.rl_variant == "hypernet" else None,
-        hyper_ratio=args.hyper_ratio if args.rl_variant == "hypernet" else None,
+        embedding_dim=args.embedding_dim if is_hypernet_variant(args.rl_variant) else None,
+        fourier_scale=args.fourier_scale if is_hypernet_variant(args.rl_variant) else None,
+        hyper_ratio=args.hyper_ratio if is_hypernet_variant(args.rl_variant) else None,
         learning_rate=args.learning_rate,
         device=args.device,
         task_type=args.task_type,
@@ -216,3 +217,12 @@ def predict(net_container: Trainer, dataloader, bag_size=20, pool_size=10):
     preds = net_container.predict_pool(pool_data)
     
     return preds
+
+def is_hypernet_variant(variant: str):
+    return variant != "baseline"
+
+def get_trainer_for_variant(variant: str) -> Trainer:
+    match variant:
+        case "baseline": return RLMILTrainer
+        case "hypernet_rl": return HypernetRLTrainer
+        case "hypernet_rlmil": return HypernetRLMILTrainer

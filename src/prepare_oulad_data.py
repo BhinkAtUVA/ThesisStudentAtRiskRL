@@ -1,5 +1,6 @@
 import os
 import pickle
+import sys
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -7,11 +8,11 @@ from utils import save_pickle, set_seed
 from logger import get_logger
 
 INPUT_PATH = "data/oulad/oulad_aggregated.pkl"
-SEED = 0
+SEED = int(sys.argv[1])
 DATASET_NAME = "oulad_aggregated"
 EMBEDDING_MODEL = "tabular"
 DATA_COLUMN = "instances"  
-SAVE_DIR = f"data/seed_{SEED}/{DATASET_NAME}/{DATA_COLUMN}/{EMBEDDING_MODEL}"
+SAVE_DIR = f"data/seed_{SEED}/{DATA_COLUMN}/{EMBEDDING_MODEL}"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # Max instances per bag (1302 for full dataset, 39 for aggregated dataset)

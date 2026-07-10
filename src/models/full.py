@@ -5,7 +5,7 @@ import torch
 from torch.func import functional_call
 
 from src.models.adversary import AdversarialMLP
-from src.models.hypernet import FourierHypernetwork, Hypernetwork, get_num_weights_policy, init_policy_storage, init_task_storage, pack_weights_policy, pack_weights_task
+from src.models.hypernet import FourierHypernetwork, Hypernetwork, get_num_weights_policy, get_num_weights_task, init_policy_storage, init_task_storage, pack_weights_policy, pack_weights_task
 from src.models.mil import ApproxRepSet, BaseMLP
 from src.models.rl import PolicyNetwork
 
@@ -69,9 +69,6 @@ class RLMILBase(NetworkContainer):
             batch_rep = self.task_model.base_network(batch_x).detach()
 
         action_probs, exp_reward = self.policy(batch_rep)
-        action_probs = action_probs.squeeze(-1)
-
-        exp_reward = torch.mean(exp_reward, dim=1)
         return action_probs, batch_rep, exp_reward
 
     def predict(self, loss_fn, batch_x, batch_y):
@@ -285,7 +282,7 @@ class HypernetRL(NetworkContainer):
 
 class HypernetRLMIL(NetworkContainer):
     def __init__(self, **kwargs):
-        super(HypernetRL, self).__init__()
+        super(HypernetRLMIL, self).__init__()
         self.state_dim = kwargs["state_dim"]
         self.hdim = kwargs["hdim"]
         self.hidden_dim = kwargs["hidden_dim"]
@@ -298,9 +295,9 @@ class HypernetRLMIL(NetworkContainer):
 
         # self.args = args
         self.is_repset = type(self.task_model) == ApproxRepSet
-        self.num_weights_task = 0
         self.task_hidden_dim, self.task_input_dim = next(self.task_model.mlp[0].parameters()).size()
-        self.task_output_dim = next(self.task_model.mlp[2].parameters()).size()[0] if not self.is_repset else next(self.task_model.mlp[3].parameters()).size()[0]
+        self.task_output_dim = next(self.task_model.mlp[3].parameters()).size()[0] if not self.is_repset else next(self.task_model.mlp[2].parameters()).size()[0]
+        self.num_weights_task = get_num_weights_task(self.task_input_dim, self.task_hidden_dim, self.task_output_dim)
         self.num_weights_policy = get_num_weights_policy(self.state_dim, self.hdim)
         self.hyper = FourierHypernetwork(1, 512, self.num_weights_task + self.num_weights_policy, kwargs["embedding_dim"] or 64, kwargs["fourier_scale"] or 5.0)
         self.task_weights = torch.nn.Parameter(init_task_storage(self.task_model.mlp.state_dict()))
@@ -323,11 +320,11 @@ class HypernetRLMIL(NetworkContainer):
             self.to(kwargs["device"])
     
     def _peek_task_last_hidden(self, module, input, output):
-        self.batch_hidden = output.detach()
+        self.batch_hidden = output
 
     def set_preference(self, value: torch.Tensor):
         self.preference = value
-        self.cached_task
+        self.cached_task = None
         self.cached_policy = None
 
     def action(self, batch_x):
@@ -336,7 +333,7 @@ class HypernetRLMIL(NetworkContainer):
         else:
             batch_rep = self.task_model.base_network(batch_x).detach()
 
-        if self.cached_task is None:
+        if self.cached_task is None or self.cached_policy is None:
             hyper_weights: torch.Tensor = self.hyper(self.preference)
             self.cached_task = pack_weights_task(hyper_weights[0:self.num_weights_task], self.task_weights, self.hyper_ratio, self.task_input_dim, self.task_hidden_dim, self.task_output_dim, self.is_repset)
             self.task_model.mlp.load_state_dict(self.cached_task)
@@ -362,8 +359,7 @@ class HypernetRLMIL(NetworkContainer):
         batch_bias_losses = torch.stack([self.bias_loss_fn(pred, target) for pred, target in zip(batch_bias_pred, protected_labels.unbind(dim=-1))])
         batch_bias_loss = batch_bias_losses.mean()
         task_optim.zero_grad()
-        batch_loss.backward()
-        batch_bias_loss.backward()
+        ((1 - self.self.preference) * batch_loss + self.preference * batch_bias_loss).backward()
         task_optim.step()
         return batch_loss.item(), batch_bias_loss.item()
     
@@ -389,6 +385,7 @@ class HypernetRLMIL(NetworkContainer):
         self.hyper = self.hyper.to(device)
         self.task_model = self.task_model.to(device)
         self.debiasing_model = self.debiasing_model.to(device)
+        self.task_weights = torch.nn.Parameter(self.task_weights.to(device).detach())
         self.policy_weights = torch.nn.Parameter(self.policy_weights.to(device).detach())
         self.preference = self.preference.to(device)
         self.cached_task = None
@@ -404,9 +401,12 @@ class HypernetRLMIL(NetworkContainer):
     
     def load_state_dict(self, state_dict):
         self.hyper.load_state_dict(state_dict["hyper"])
-        policy_weights = state_dict["storage"]
+        task_weights = state_dict["task"]
+        if self.task_weights.get_device() >= 0: task_weights = task_weights.to(self.task_weights.get_device())
+        self.task_weights = task_weights
+        policy_weights = state_dict["policy"]
         if self.policy_weights.get_device() >= 0: policy_weights = policy_weights.to(self.policy_weights.get_device())
         self.policy_weights = policy_weights
         self.debiasing_model.load_state_dict(state_dict["debias"])
-        if "task" in state_dict: self.task_model.load_state_dict(state_dict["task"])
+        self.cached_task = None
         self.cached_policy = None

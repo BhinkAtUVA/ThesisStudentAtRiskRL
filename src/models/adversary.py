@@ -45,5 +45,5 @@ class AdversarialMLP(nn.Module):
                 nn.init.zeros_(m.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        hidden_result = self.shared(x)
+        hidden_result = self.shared(GradientReversal.apply(x))
         return [head(hidden_result) for head in self.heads] # GradientReversal.apply(head(hidden_result)...)

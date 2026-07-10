@@ -1,6 +1,7 @@
 # Imports
 from argparse import Namespace
 from logging import Logger
+import sys
 
 import pandas as pd
 import numpy as np
@@ -14,11 +15,10 @@ import json
 
 from src.models.full import HypernetRL, NetworkContainer
 from src.models.mil import create_mil_model_with_dict
-from src.trainers.util import create_debiasing_model, get_dataloaders, prepare_data
+from src.trainers.util import create_debiasing_model, get_dataloaders, get_trainer_for_variant, prepare_data
 
 # Main Configuration
 SEED_TO_ANALYZE = 0
-POOLING_METHOD_TO_ANALYZE = "MeanMLP"
 TOP_K_FOR_COUNTS = 20
 REPRODUCIBILITY_SEED = 42
 DEMOGRAPHIC_LABELS = ['Imd Band', 'Region', 'Gender', 'Age Band']
@@ -28,18 +28,23 @@ OUTPUT_DIR = 'results/'
 
 # These depend on which specific experiments you did
 DATASET_CONFIGS = {
-    "base_path": f'runs/classification/seed_{SEED_TO_ANALYZE}/instances/tabular/label/bag_size_20/{POOLING_METHOD_TO_ANALYZE}/',
     "raw_data_path": 'data/oulad/oulad_aggregated_raw.pkl',
     "output_dir": OUTPUT_DIR,
     "models": {
-        """ "Baseline": {
-            "score_column": "shap_value",
+        "Baseline": {
+            "variant": "baseline",
+            "is_hypernet": False,
             "model_to_explain_suffix": 'neg_policy_only_loss_epsilon_greedy_reg_sum_sample_without_replacement/'
-        }, """
-        "Hypernetwork Architecture": {
-            "score_column": "shap_value",
+        },
+        "Task-agnostic Hypernetwork": {
+            "variant": "hypernet_rl",
             "is_hypernet": True,
             "model_to_explain_suffix": 'neg_policy_only_loss_pareto_hypernet_epsilon_greedy_reg_sum_sample_without_replacement/',
+        },
+        "Task-aware Hypernetwork": {
+            "variant": "hypernet_rlmil",
+            "is_hypernet": True,
+            "model_to_explain_suffix": 'neg_policy_only_loss_pareto_full_hypernet_epsilon_greedy_reg_sum_sample_without_replacement/',
         }
     }
 }
@@ -80,7 +85,7 @@ def build_bag_to_labels_map(raw_data_path):
     return bag_to_labels
 
 
-def print_counts_table(model_name, counts_dict, bag_presence_dict, total_bags):
+def print_counts_table(model_name, counts_dict, bag_presence_dict, total_bags, pooling_method):
     print(f"\n--- Top-{TOP_K_FOR_COUNTS} Feature Counts for: {model_name.upper()} ---")
     if not counts_dict:
         print("No instances were found in the top 20.")
@@ -90,9 +95,10 @@ def print_counts_table(model_name, counts_dict, bag_presence_dict, total_bags):
     df['Present in X Bags'] = df['Feature Type'].map(bag_presence_dict)
     df['Bag Presence %'] = df['Present in X Bags'] / total_bags * 100
     df['Avg Count When Present'] = df['Total Count in Top-20'] / df['Present in X Bags']
-    df = df.sort_values(by='Total Count in Top-20', ascending=False).reset_index(drop=True)
+    df = df.sort_values(by='Bag Presence %', ascending=False).reset_index(drop=True)
     print(f"Based on {total_bags} common bags.")
     print(df)
+    df.to_csv(f"results/{pooling_method}_{model_name}_top20.csv")
 
 
 def calculate_hhi(counts_dict, total_bags):
@@ -123,27 +129,36 @@ def get_counts_for_split(bags_list, df_source, score_column, bag_to_labels_map):
             counts[bag_labels[idx]] += 1
     return counts
 
-def load_rl_model(run_dir_path, load_best=True) -> NetworkContainer:
+def load_rl_model(run_dir_path, variant="hypernet_rl", load_best=True, mil_path=None) -> NetworkContainer:
     print("Attempting to load RL model...")
     device = torch.device(f"cuda:0" if torch.cuda.is_available() else "cpu")
     model_weights_path = os.path.join(run_dir_path, 'sweep_best_model.pt' if load_best else 'model.pt')
-    rl_config_path = os.path.join(run_dir_path, 'sweep_best_model_config.json')
-    mil_config_path = os.path.join(run_dir_path, '..', 'best_model_config.json')
-    mil_weights_path = os.path.join(run_dir_path, '..', 'best_model.pt')
+    rl_config_path = os.path.join(mil_path if mil_path is not None else run_dir_path, 'sweep_best_model_config.json')
+    mil_config_path = os.path.join(mil_path if mil_path is not None else run_dir_path, '..', 'best_model_config.json')
+    mil_weights_path = os.path.join(mil_path if mil_path is not None else run_dir_path, '..', 'best_model.pt')
     
     try:
         with open(mil_config_path) as f: mil_config = json.load(f)
         with open(rl_config_path) as f: rl_config = json.load(f)
     except FileNotFoundError as e:
         print(f"FATAL: A config file was not found: {e}"); return None
+    
+    try:
+        rl_config["embedding_dim"] = rl_config["embedding_dim"]
+        rl_config["fourier_scale"] = rl_config["fourier_scale"]
+        rl_config["hyper_ratio"] = rl_config["hyper_ratio"]
+    except:
+        rl_config["embedding_dim"] = None
+        rl_config["fourier_scale"] = None
+        rl_config["hyper_ratio"] = None
 
     task_model = create_mil_model_with_dict(mil_config)
     task_model.load_state_dict(torch.load(mil_weights_path, map_location=device))
-    debiasing_model = create_debiasing_model(Namespace(**mil_config), run_dir_path, Logger("Discard"))
+    debiasing_model = create_debiasing_model(Namespace(**mil_config), mil_path if mil_path is not None else run_dir_path, Logger("Discard"))
     
-    net_container = HypernetRL(
+    net_container = get_trainer_for_variant(variant).get_model_constructor()(
         task_model=task_model, debiasing_model=debiasing_model, state_dim=rl_config['state_dim'], hdim=rl_config['hdim'], hidden_dim=mil_config["hidden_dim"],
-        embedding_dim=rl_config["embedding_dim"], fourier_scale=rl_config["fourier_scale"], hyper_ratio=rl_config["hyper_ratio"],
+        embedding_dim=rl_config["embedding_dim"] or None, fourier_scale=rl_config["fourier_scale"], hyper_ratio=rl_config["hyper_ratio"],
         learning_rate=rl_config['learning_rate'], device=device, task_type=rl_config['task_type'],
         min_clip=rl_config.get('min_clip'), max_clip=rl_config.get('max_clip'),
         sample_algorithm=rl_config.get('sample_algorithm'), no_autoencoder=rl_config.get('no_autoencoder_for_rl', False)
@@ -167,22 +182,8 @@ def append_to_csv(df, filepath):
     else:
         print(f"Appended new results to: {filepath}")
 
-if __name__ == "__main__":
-
-    # Step 1: Load Bag-to-Label Maps
-
-    bag_to_labels_maps = {}
-
-
-    print(f"--- Loading label map for: OULAD_AGGREGATED ---")
-    try:
-        bag_to_labels_maps = build_bag_to_labels_map(DATASET_CONFIGS['raw_data_path'])
-        print(f"Successfully loaded map with {len(bag_to_labels_maps)} bags.")
-    except Exception as e:
-        print(f"    ERROR: Could not load map for OULAD_AGGREGATED. Error: {e}")
-
-    # Step 2: Calculate or Load SHAP Values
-
+def run_shap_analysis(seed: int, pooling_method: str, detailed=True):
+    base_path = f'runs/classification/seed_{seed}/instances/tabular/label/bag_size_20/{pooling_method}/'
     all_dfs = {} 
 
     print("Starting SHAP Analysis")
@@ -190,23 +191,24 @@ if __name__ == "__main__":
     for model_name, model_config in DATASET_CONFIGS['models'].items():
         # Process only if the model is explicitly marked for SHAP analysis
         full_model_name = f"{model_name}"
+        variant = model_config["variant"]
         print(f"\n- Processing SHAP for: {full_model_name}")
         
-        shap_filename = f"shap_scores_{POOLING_METHOD_TO_ANALYZE}_seed_{SEED_TO_ANALYZE}.csv"
+        shap_filename = f"shap_scores_{pooling_method}_{variant}_seed_{seed}.csv"
         shap_output_file = os.path.join(DATASET_CONFIGS['output_dir'], shap_filename)
         
         try:
             if os.path.exists(shap_output_file):
                 print(f"  Found pre-computed file. Loading from: {shap_output_file}")
                 shap_df_loaded = pd.read_csv(shap_output_file, index_col=0)
-                df = shap_df
+                all_dfs[full_model_name] = shap_df_loaded
             else:
                 # SHAP CALCULATION LOGIC
                 print(f"  No SHAP file found at {shap_output_file}.")
                 print("  Starting new calculation (this may take a while)...")
                 
-                model_dir = os.path.join(DATASET_CONFIGS['base_path'], model_config['model_to_explain_suffix'])
-                net_container: NetworkContainer = load_rl_model(model_dir) # Assumes load_rl_model is defined
+                model_dir = os.path.join(base_path, model_config['model_to_explain_suffix'])
+                net_container: NetworkContainer = load_rl_model(model_dir, variant) # Assumes load_rl_model is defined
                 
                 if not net_container:
                     print(f"  ERROR: Could not load model from {model_dir}. Skipping.")
@@ -283,10 +285,14 @@ if __name__ == "__main__":
                 explainer = shap.KernelExplainer(shap_wrapper_f, shap.sample(instance_features, 50))
 
                 if model_config["is_hypernet"]:
-                    for preference in np.linspace(0, 1, 11):
-                        shap_filename = f"shap_scores_{POOLING_METHOD_TO_ANALYZE}_seed_{SEED_TO_ANALYZE}_pref_{str(round(preference, 1)).replace(".", "-")}.csv"
+                    for preference in np.linspace(0, 1, 2):#11 if detailed else 2):
+                        shap_filename = f"shap_scores_{pooling_method}_{variant}_seed_{seed}_pref_{str(round(preference, 1)).replace(".", "-")}.csv"
                         shap_output_file = os.path.join(DATASET_CONFIGS['output_dir'], shap_filename)
-                        if os.path.exists(shap_output_file): continue
+                        if os.path.exists(shap_output_file):
+                            print(f"  Found pre-computed file. Loading from: {shap_output_file}")
+                            shap_df_loaded = pd.read_csv(shap_output_file, index_col=0)
+                            all_dfs[full_model_name + f"pref_{str(round(preference, 1)).replace(".", "-")}"] = shap_df_loaded
+                            continue
 
                         net_container: HypernetRL = net_container
                         net_container.set_preference(torch.fill(torch.zeros((1)), preference).to(torch.device("cuda:0")))
@@ -296,23 +302,40 @@ if __name__ == "__main__":
                         shap_df = df_details
 
                         shap_df.to_csv(shap_output_file)
+                        all_dfs[full_model_name + f"pref_{str(round(preference, 1)).replace(".", "-")}"] = shap_df
                     shap_df = pd.read_csv(shap_output_file)
                 else:
                     shap_values = explainer.shap_values(instance_features)
-                    
-                    shap_df = pd.DataFrame({'shap_value': np.abs(shap_values).mean(axis=1)}, index=df_details.index)
+                    df_details["shap_value"] = np.abs(shap_values).mean(axis=1)
+                    shap_df = df_details
                     
                     print(f"  SHAP values calculated. Saving to: {shap_output_file}")
                     shap_df.to_csv(shap_output_file)
-                
-                df = shap_df
 
-            all_dfs[full_model_name] = df
+                    all_dfs[full_model_name] = shap_df
 
         except (FileNotFoundError, KeyError) as e:
             print(f"  WARNING: Could not process {full_model_name}. Error: {e}")
 
     print("\n SHAP analysis complete.")
+    return all_dfs
+
+def analyze_pooling_method(pooling_method: str):
+    # Step 1: Load Bag-to-Label Maps
+
+    bag_to_labels_maps = {}
+
+
+    print(f"--- Loading label map for: OULAD_AGGREGATED ---")
+    try:
+        bag_to_labels_maps = build_bag_to_labels_map(DATASET_CONFIGS['raw_data_path'])
+        print(f"Successfully loaded map with {len(bag_to_labels_maps)} bags.")
+    except Exception as e:
+        print(f"    ERROR: Could not load map for OULAD_AGGREGATED. Error: {e}")
+
+    # Step 2: Calculate or Load SHAP Values
+
+    all_dfs = run_shap_analysis(0, pooling_method)
 
     # Step 3: Find Common Bags
 
@@ -330,12 +353,8 @@ if __name__ == "__main__":
     for model_name, df_source in all_dfs.items():
         print(f"Processing: {model_name}")
         
-        dataset_name = "oulad_full" if "oulad_full" in model_name else "oulad_aggregated"
         correct_map = bag_to_labels_maps
         common_bags_for_model = common_bags
-        
-        base_model_name = model_name.replace(f" on {dataset_name}", "")
-        score_col = DATASET_CONFIGS['models'][base_model_name]['score_column']
 
         grouped_df = df_source.groupby('bag_id')
 
@@ -349,7 +368,7 @@ if __name__ == "__main__":
 
                 if len(bag_labels) == len(bag_df):
                     unique_labels_in_top20 = set()
-                    top_20 = bag_df.nlargest(TOP_K_FOR_COUNTS, score_col)
+                    top_20 = bag_df.nlargest(TOP_K_FOR_COUNTS, "shap_value")
                     
                     for idx in top_20.index:
                         label = bag_labels[bag_df.index.get_loc(idx)]
@@ -370,7 +389,8 @@ if __name__ == "__main__":
             model_name, 
             all_counts[model_name], 
             all_bag_presence[model_name], 
-            total_bags_for_dataset
+            total_bags_for_dataset,
+            pooling_method
         )
 
     # Step 6: Reliance on Demographics
@@ -425,10 +445,9 @@ if __name__ == "__main__":
 
     for model_name, df in all_dfs.items():
         print(f"  -> Calculating for model: {model_name}...")
-        score_col = DATASET_CONFIGS['models'][model_name]['score_column']
         
-        counts_a = get_counts_for_split(bags_a, df, score_col, correct_map_for_model)
-        counts_b = get_counts_for_split(bags_b, df, score_col, correct_map_for_model)
+        counts_a = get_counts_for_split(bags_a, df, "shap_value", correct_map_for_model)
+        counts_b = get_counts_for_split(bags_b, df, "shap_value", correct_map_for_model)
         
         policy_df = pd.DataFrame({'split_A': counts_a, 'split_B': counts_b}).fillna(0)
         spearman_corr, _ = spearmanr(policy_df['split_A'], policy_df['split_B'])
@@ -447,19 +466,19 @@ if __name__ == "__main__":
     consistency_df = pd.DataFrame(consistency_results)
     print(consistency_df.sort_values(by="Model").reset_index(drop=True))
 
-    # Step 9: save results to csv's
+    # Step 10: save results to csv's
     SPARSITY_FILE = os.path.join(OUTPUT_DIR, 'master_sparsity_metrics.csv')
     CONSISTENCY_FILE = os.path.join(OUTPUT_DIR, 'master_consistency_metrics.csv')
     DEMOGRAPHICS_FILE = os.path.join(OUTPUT_DIR, 'master_demographics_metrics.csv')
 
-    sparsity_df['seed'] = SEED_TO_ANALYZE
-    sparsity_df['pooling_method'] = POOLING_METHOD_TO_ANALYZE
+    sparsity_df['seed'] = 0
+    sparsity_df['pooling_method'] = pooling_method
 
-    consistency_df['seed'] = SEED_TO_ANALYZE
-    consistency_df['pooling_method'] = POOLING_METHOD_TO_ANALYZE
+    consistency_df['seed'] = 0
+    consistency_df['pooling_method'] = pooling_method
 
-    reliance_df['seed'] = SEED_TO_ANALYZE
-    reliance_df['pooling_method'] = POOLING_METHOD_TO_ANALYZE
+    reliance_df['seed'] = 0
+    reliance_df['pooling_method'] = pooling_method
 
     try:
         append_to_csv(sparsity_df, SPARSITY_FILE)
@@ -467,3 +486,8 @@ if __name__ == "__main__":
         append_to_csv(reliance_df, DEMOGRAPHICS_FILE)
     except NameError as e:
         print(f"ERROR: A results DataFrame is not defined. Please ensure the notebook has run successfully. Details: {e}")
+
+if __name__ == "__main__":
+    methods = ["MeanMLP"]
+    for pooling_method in methods:
+        analyze_pooling_method(pooling_method)
