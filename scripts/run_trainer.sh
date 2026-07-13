@@ -12,8 +12,8 @@
 cd ~/StudiumDS/Sem2/Thesis/ThesisStudentAtRiskRL # ROOT OF YOUR PROJECT
 source venv/bin/activate
 
-baseline_types=("repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
-rl_variants=("hypernet_rlmil") # "baseline" "hypernet_rl" "hypernet_rlmil"
+baseline_types=("MeanMLP" "MaxMLP" "AttentionMLP" "repset") # "MeanMLP" "MaxMLP" "AttentionMLP" "repset"
+rl_variants=("baseline" "hypernet_rl" "hypernet_rlmil") # "baseline" "hypernet_rl" "hypernet_rlmil"
 target_labels=("label")
 gpus=(0)
 wandb_entity="BhinkAtUVA"

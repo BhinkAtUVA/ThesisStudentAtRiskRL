@@ -373,6 +373,7 @@ data/
 wandb/
 *.pt
 *.txt
+!requirements.txt
 *.jsonl
 *.zip
 *.tex
